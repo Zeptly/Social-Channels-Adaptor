@@ -2,18 +2,18 @@
   "name": "zeptly-social",
   "private": true,
   "version": "1.0.0",
-  "description": "Zeptly Social — provider-neutral headless social infrastructure gateway for Zeptly",
+  "description": "Zeptly Social \u2014 provider-neutral headless social infrastructure gateway for Zeptly",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22.12"
   },
   "type": "module",
   "scripts": {
-    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "dev": "pnpm -r --parallel --filter \"./apps/*\" dev",
     "dev:api": "pnpm --filter @zeptly-social/api dev",
     "dev:worker": "pnpm --filter @zeptly-social/worker dev",
     "dev:mock-outstand": "tsx packages/test-utils/src/mock-outstand-server.ts",
-    "build": "pnpm -r --filter ./apps/* build",
+    "build": "pnpm -r --filter \"./apps/*\" build",
     "build:api": "pnpm --filter @zeptly-social/api build",
     "build:worker": "pnpm --filter @zeptly-social/worker build",
     "start:api": "node apps/api/dist/main.js",
@@ -26,11 +26,14 @@
     "test:live": "OUTSTAND_LIVE_TESTS=true vitest run --project live",
     "db:generate": "drizzle-kit generate --config packages/database/drizzle.config.ts",
     "db:migrate": "tsx packages/database/src/migrate.ts",
-    "db:check": "drizzle-kit check --config packages/database/drizzle.config.ts && tsx scripts/check-migrations.ts",
+    "db:check": "drizzle-kit check --config packages/database/drizzle.config.ts",
     "db:seed": "tsx packages/database/src/seed.ts",
     "openapi:generate": "tsx apps/api/src/scripts/generate-openapi.ts",
     "openapi:check": "tsx apps/api/src/scripts/generate-openapi.ts --check",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm openapi:check"
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm openapi:check",
+    "zs": "tsx scripts/zs.ts",
+    "migrate:prod": "node apps/api/dist/migrate.js",
+    "db:drift": "drizzle-kit generate --config packages/database/drizzle.config.ts --name drift_check && git diff --exit-code -- migrations && test -z \"$(git status --porcelain -- migrations)\""
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

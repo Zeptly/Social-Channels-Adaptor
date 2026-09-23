@@ -56,6 +56,7 @@ export async function createHarness(opts: { inlineDispatch?: boolean; now?: Date
     baseUrl: config.OUTSTAND_API_BASE_URL,
     fetchImpl: fake.fetch,
     retryBaseMs: 1,
+    now: clock.now,
     maxAttempts: 3,
     logger,
   });

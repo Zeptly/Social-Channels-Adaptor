@@ -65,6 +65,8 @@ export class FakeOutstand {
   /** Account ids Outstand will silently drop from create-post (documented behaviour for unresolved identifiers). */
   silentlyDrop = new Set<string>();
   mediaTtlMs = 7 * 86_400_000;
+  /** Test hook: force the finalize response (e.g. return an account owned by another tenant). */
+  finalizeOverride: Array<Record<string, unknown>> | undefined;
   horizonDays = 30;
   now: () => Date = () => new Date();
   private seq = 0;
@@ -126,7 +128,7 @@ export class FakeOutstand {
     const p = this.posts.get(postId);
     if (!p) throw new Error("unknown post");
     for (const a of p.accounts) {
-      if (a.status === "pending") this.setPostAccount(postId, a.id, { status: "published", platformPostId: `plat_${a.id}_${postId}`, platformPostUrl: `https://social.example/${a.id}/${postId}` });
+      if (a.status === "pending") this.setPostAccount(postId, a.id, { status: "published", platformPostId: `plat_${randomBytes(4).toString("hex")}`, platformPostUrl: `https://social.example/p/${randomBytes(4).toString("hex")}` });
     }
   }
 
@@ -213,6 +215,10 @@ export class FakeOutstand {
     if (method === "POST" && (m = /^\/social-accounts\/pending\/([^/]+)\/finalize$/.exec(path))) {
       const s = this.pending.get(decodeURIComponent(m[1] as string));
       if (!s || s.finalized) return json(404, { success: false, error: "Session not found" });
+      if (this.finalizeOverride) {
+        s.finalized = true;
+        return json(200, { success: true, data: { connectedAccounts: this.finalizeOverride } });
+      }
       const ids = (b.selectedPageIds as string[]) ?? [];
       const chosen = s.pages.length ? s.pages.filter((p) => ids.includes(p.id)) : [{ id: "self", name: `${s.network} user`, username: `${s.network}_self`, type: "personal" as const }];
       s.finalized = true;

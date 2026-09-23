@@ -23,7 +23,7 @@ export const workspaceHeaders = z
   .loose();
 
 export const idempotentHeaders = workspaceHeaders.extend({
-  "idempotency-key": z.string().min(8).max(128).describe("Required. Replays return the original response; reuse with a different body → IDEMPOTENCY_CONFLICT."),
+  "idempotency-key": z.string().optional().describe("REQUIRED (missing → 400 IDEMPOTENCY_KEY_REQUIRED). 8-128 chars [A-Za-z0-9._:-]. Replays return the original response; reuse with a different body → IDEMPOTENCY_CONFLICT."),
 });
 
 export const serviceHeaders = workspaceHeaders.omit({ "x-zeptly-workspace-id": true }).loose();

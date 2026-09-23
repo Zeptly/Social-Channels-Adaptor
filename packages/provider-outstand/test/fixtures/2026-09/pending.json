@@ -1,0 +1,1 @@
+{"success":true,"data":{"network":"facebook","expiresAt":1790000000,"availablePages":[{"id":"1001","type":"organization","name":"Acme Page","username":"acme","profilePictureUrl":"https://img.example/a.png"},{"id":"1002","type":"organization","name":"Acme Store"}]}}

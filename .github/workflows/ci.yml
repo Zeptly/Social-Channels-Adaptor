@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: zeptly_social_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      # CI-only throwaway database; no production secrets are used in CI.
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/zeptly_social_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/zeptly_social_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Migration validation (consistency, no schema drift, apply twice)
+        run: |
+          pnpm db:check
+          pnpm db:drift
+          pnpm db:migrate
+          pnpm db:migrate
+      - name: Unit tests
+        run: pnpm test:unit
+      - name: Integration tests
+        run: pnpm test:integration
+      - name: Build (API + worker bundles)
+        run: pnpm build
+      - name: OpenAPI contract is up to date
+        run: pnpm openapi:check
+      - name: Repository guards (no frontend, no committed env files)
+        run: |
+          ! git ls-files | grep -E '\.(tsx|jsx|vue|svelte|css|scss|html)$'
+          ! git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '^\.env\.example$'

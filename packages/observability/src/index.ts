@@ -1,4 +1,4 @@
-import { pino, type Logger, type LoggerOptions } from "pino";
+import { type DestinationStream, pino, type Logger, type LoggerOptions } from "pino";
 
 export type { Logger };
 
@@ -33,6 +33,11 @@ export function redactString(input: string): string {
   return out;
 }
 
+/** Redact query secrets and the provisioning callback state token from a URL/path. */
+export function redactUrl(url: string): string {
+  return redactString(url).replace(/(\/v1\/connect\/callback\/)[^/?#]+/, `$1${REDACTED}`);
+}
+
 export function redact<T>(value: T, depth = 0): T {
   if (depth > 10) return "[TRUNCATED]" as T;
   if (typeof value === "string") return redactString(value) as T;
@@ -52,7 +57,8 @@ export function redact<T>(value: T, depth = 0): T {
 export interface CreateLoggerOptions {
   level?: string;
   service: string;
-  pretty?: boolean;
+  /** Optional destination stream (tests). Defaults to stdout. */
+  destination?: DestinationStream;
 }
 
 /** Paths redacted by pino itself (defence in depth on top of redact()). */
@@ -97,6 +103,13 @@ export function createLogger(opts: CreateLoggerOptions): Logger {
       },
     },
     serializers: {
+      // Request URLs can carry provider session handles (e.g. ?session=…) and the
+      // provisioning state token (/v1/connect/callback/<state>): scrub both.
+      req: (req: { method?: string; url?: string; headers?: Record<string, unknown>; socket?: { remoteAddress?: string } }) => ({
+        method: req.method,
+        url: req.url ? redactUrl(req.url) : req.url,
+        remoteAddress: req.socket?.remoteAddress,
+      }),
       err: (err: unknown) => {
         if (err instanceof Error) {
           const e = err as Error & { code?: unknown; kind?: unknown; status?: unknown };
@@ -106,7 +119,7 @@ export function createLogger(opts: CreateLoggerOptions): Logger {
       },
     },
   };
-  return pino(options);
+  return opts.destination ? pino(options, opts.destination) : pino(options);
 }
 
 /** Structured operation timing: logs outcome + latency for traceability (spec §27). */

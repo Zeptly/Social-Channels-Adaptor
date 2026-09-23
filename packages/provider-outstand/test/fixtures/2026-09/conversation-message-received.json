@@ -1,0 +1,1 @@
+{"event":"message.received","timestamp":"2026-09-23T12:00:00.000Z","data":{"accountId":"IGacct","conversationId":"conv_1","conversation":{"participant":{"id":"ig_user_9","name":"Pat Customer","username":"pat.c"}},"message":{"id":"msg_1","direction":"inbound","text":"Is this in stock?","created_at":"2026-09-23T12:00:00.000Z"}}}

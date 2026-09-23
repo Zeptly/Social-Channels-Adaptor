@@ -207,7 +207,7 @@ export const SocialPostTargetInputSchema = z
     content: SocialContentSchema.optional().describe("Per-target override of the base content (already-generated variant)"),
     options: NetworkOptionsSchema.optional(),
   })
-  .meta({ id: "SocialPostTargetInput" });
+  .meta({ id: "PostTargetRequest" });
 export type SocialPostTargetInput = z.infer<typeof SocialPostTargetInputSchema>;
 
 export const SocialPostTargetSchema = z

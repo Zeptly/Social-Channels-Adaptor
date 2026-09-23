@@ -43,6 +43,8 @@ export interface OutstandProviderOptions {
   fetchImpl?: typeof fetch;
   logger?: Logger;
   requestId?: () => string | undefined;
+  /** Clock (injectable for tests). */
+  now?: () => Date;
 }
 
 export const DEFAULT_OUTSTAND_BASE_URL = "https://api.outstand.so/v1";
@@ -58,11 +60,13 @@ export class OutstandProvider implements SocialProvider {
   readonly webhooks: OutstandWebhookVerifier;
   private readonly http: OutstandHttp;
   private readonly timeoutMs: number;
+  private readonly now: () => Date;
 
   constructor(opts: OutstandProviderOptions) {
     registerSecret(opts.apiKey);
     registerSecret(opts.webhookSecret);
     this.timeoutMs = opts.timeoutMs ?? 30_000;
+    this.now = opts.now ?? (() => new Date());
     this.http = new OutstandHttp({
       apiKey: opts.apiKey,
       baseUrl: opts.baseUrl ?? DEFAULT_OUTSTAND_BASE_URL,
@@ -160,7 +164,7 @@ export class OutstandProvider implements SocialProvider {
       mutating: true,
     });
     const d = wireUploadUrlSchema.parse(unwrap(json));
-    return { externalId: d.id, uploadUrl: d.upload_url, expiresAt: new Date(Date.now() + (d.expires_in ?? 900) * 1000) };
+    return { externalId: d.id, uploadUrl: d.upload_url, expiresAt: new Date(this.now().getTime() + (d.expires_in ?? 900) * 1000) };
   }
 
   async confirmUpload(input: { externalId: string; filename: string; sizeBytes?: number }): Promise<ProviderMedia> {
@@ -231,7 +235,7 @@ export class OutstandProvider implements SocialProvider {
   }
 
   async schedule(input: ProviderPublishRequest & { scheduledAt: Date }): Promise<ProviderPostState> {
-    if (input.scheduledAt.getTime() - Date.now() > this.schedulingHorizonMs) {
+    if (input.scheduledAt.getTime() - this.now().getTime() > this.schedulingHorizonMs) {
       throw new ProviderError(PROVIDER, "validation", "scheduledAt lies beyond the Outstand scheduling horizon", { retryable: false, ambiguous: false });
     }
     return this.createPost(input);
