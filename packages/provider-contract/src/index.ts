@@ -76,6 +76,9 @@ export interface ProviderPublishRequest {
   scheduledAt?: Date;
 }
 
+/** In-place edit of a not-yet-published provider post (same accounts, same provider reference). */
+export type ProviderUpdateRequest = Omit<ProviderPublishRequest, "idempotencyKey" | "accountExternalIds" | "scheduledAt"> & { scheduledAt: Date };
+
 export type ProviderTargetStatus = "pending" | "published" | "failed" | "deleted" | "unknown";
 
 export interface ProviderTargetState {
@@ -210,6 +213,13 @@ export interface SocialProvider {
   getPost(externalId: string): Promise<ProviderPostState>;
   /** Idempotent: an already-deleted post resolves successfully. */
   deletePost(externalId: string): Promise<void>;
+
+  /**
+   * True when `updatePost` is available and enabled. When false (or when an
+   * update fails) the domain edits handed-off posts by delete + recreate.
+   */
+  readonly supportsPostUpdate: boolean;
+  updatePost?(externalId: string, input: ProviderUpdateRequest): Promise<ProviderPostState>;
 
   getMetrics?(postExternalId: string): Promise<ProviderPostMetrics[]>;
 

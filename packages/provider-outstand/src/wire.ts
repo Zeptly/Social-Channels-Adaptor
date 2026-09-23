@@ -240,6 +240,7 @@ export interface OutstandCreatePostBody {
   youtube?: Record<string, unknown>;
   tiktok?: Record<string, unknown>;
   pinterest?: Record<string, unknown>;
+  facebook?: Record<string, unknown>;
 }
 
 function pick(src: Record<string, unknown>, keys: string[]): Record<string, unknown> {
@@ -259,7 +260,7 @@ export function networkOptions(network: SocialNetwork, options: Record<string, u
       return Object.keys(o).length ? { threads: o } : {};
     }
     case "instagram": {
-      const o = pick(options, ["mediaType", "shareToFeed"]);
+      const o = pick(options, ["mediaType", "shareToFeed", "isAiGenerated"]);
       return Object.keys(o).length ? { instagram: o } : {};
     }
     case "youtube": {
@@ -269,6 +270,10 @@ export function networkOptions(network: SocialNetwork, options: Record<string, u
     case "tiktok": {
       const o = pick(options, ["privacyLevel", "disableDuet", "disableStitch", "disableComment"]);
       return Object.keys(o).length ? { tiktok: o } : {};
+    }
+    case "facebook": {
+      const o = pick(options, ["publishAsReel", "publishAsStory"]);
+      return Object.keys(o).length ? { facebook: o } : {};
     }
     case "pinterest": {
       const boardId = options.boardId;
@@ -323,9 +328,10 @@ function finiteNumber(v: unknown): number | undefined {
 }
 
 /**
- * Only metrics Outstand actually reports are emitted (absent ≠ 0). Platform-specific
- * numeric values are kept under `platform.<key>` so they are never mistaken for
- * the standard cross-provider names.
+ * Only metrics Outstand actually reports are emitted (absent ≠ 0). Standard names
+ * come first; any other numeric metric Outstand adds (e.g. Reels views, Story
+ * metrics, fuller Facebook insights) is passed through under its reported name;
+ * `platform_specific` values are kept under `platform.<key>`.
  */
 export function mapAnalytics(raw: unknown): ProviderPostMetrics[] {
   const body = extractAnalytics(raw);
@@ -335,6 +341,12 @@ export function mapAnalytics(raw: unknown): ProviderPostMetrics[] {
     for (const name of STANDARD_METRICS) {
       const v = finiteNumber(m.metrics[name]);
       if (v !== undefined) metrics.push({ name, value: v });
+    }
+    const standard: ReadonlySet<string> = new Set<string>(STANDARD_METRICS);
+    for (const name of Object.keys(m.metrics).sort()) {
+      if (standard.has(name) || name === "platform_specific") continue;
+      const v = typeof m.metrics[name] === "number" ? finiteNumber(m.metrics[name]) : undefined;
+      if (v !== undefined && /^[A-Za-z0-9_.-]{1,64}$/.test(name)) metrics.push({ name, value: v });
     }
     const ps = m.metrics.platform_specific;
     if (ps && typeof ps === "object") {

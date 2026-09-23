@@ -27,7 +27,7 @@ export interface Harness {
   clock: TestClock;
   call(
     workspace: string | null,
-    method: "GET" | "POST" | "DELETE",
+    method: "GET" | "POST" | "DELETE" | "PATCH",
     url: string,
     body?: unknown,
     headers?: Record<string, string>,
@@ -41,7 +41,7 @@ export interface Harness {
 
 let shared: DatabaseHandle | undefined;
 
-export async function createHarness(opts: { inlineDispatch?: boolean; now?: Date } = {}): Promise<Harness> {
+export async function createHarness(opts: { inlineDispatch?: boolean; now?: Date; postUpdate?: boolean } = {}): Promise<Harness> {
   shared ??= await openTestDatabase();
   const db = shared;
   await resetDatabase(db);
@@ -57,6 +57,7 @@ export async function createHarness(opts: { inlineDispatch?: boolean; now?: Date
     fetchImpl: fake.fetch,
     retryBaseMs: 1,
     now: clock.now,
+    enablePostUpdate: opts.postUpdate ?? false,
     maxAttempts: 3,
     logger,
   });

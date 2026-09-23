@@ -114,9 +114,11 @@ flowchart TD
   E --> F[publication accepted<br/>targets scheduled]
   F --> G[Outstand publishes at publish_at]
   G --> H[webhook + reconciliation → published / partially_published / failed]
-  A2[reschedule / cancel] --> I{handed off?}
-  I -- yes --> J[DELETE provider post] --> K[cancel publication, create new]
-  I -- no --> K
+  A2[edit / reschedule / cancel] --> I{handed off?}
+  I -- no --> K[cancel publication, create new]
+  I -- yes --> U{edit/reschedule, update enabled,<br/>same targets, inside horizon?}
+  U -- yes --> P[PATCH provider post in place<br/>same provider reference]
+  U -- "no / PATCH failed / cancel" --> J[DELETE provider post] --> K
 ```
 
 ## 5. Webhook processing and reconciliation

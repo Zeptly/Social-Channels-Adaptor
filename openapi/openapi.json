@@ -1105,6 +1105,27 @@
           "targets"
         ]
       },
+      "UpdatePostRequestInput": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "$ref": "#/components/schemas/SocialContentInput"
+          },
+          "targets": {
+            "description": "Full replacement of the target list (variants/options included)",
+            "minItems": 1,
+            "maxItems": 25,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PostTargetRequestInput"
+            }
+          },
+          "externalRef": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      },
       "SchedulePostRequestInput": {
         "type": "object",
         "properties": {
@@ -2933,6 +2954,28 @@
           "content",
           "targets"
         ],
+        "additionalProperties": false
+      },
+      "UpdatePostRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "$ref": "#/components/schemas/SocialContent"
+          },
+          "targets": {
+            "description": "Full replacement of the target list (variants/options included)",
+            "minItems": 1,
+            "maxItems": 25,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PostTargetRequest"
+            }
+          },
+          "externalRef": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
         "additionalProperties": false
       },
       "SchedulePostRequest": {
@@ -6477,6 +6520,207 @@
             "name": "x-request-id",
             "required": false,
             "description": "Correlation id; echoed in responses"
+          }
+        ],
+        "security": [
+          {
+            "zeptlyServiceSignature": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SocialPost"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Edit a draft or scheduled post (same post id)",
+        "tags": [
+          "posts"
+        ],
+        "description": "Replaces base content and/or the target list (variants, options). Scheduled posts are re-planned: provider copies already handed off are updated in place when supported (OUTSTAND_POST_UPDATE_ENABLED), otherwise replaced. Rejected once any target is publishing or published.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePostRequestInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "header",
+            "name": "x-zeptly-workspace-id",
+            "required": true,
+            "description": "Zeptly workspace identifier (signed)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-zeptly-caller",
+            "required": true,
+            "description": "Calling service identity (signed)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-zeptly-timestamp",
+            "required": true,
+            "description": "Unix seconds (signed)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-zeptly-signature",
+            "required": true,
+            "description": "v1=<hex HMAC-SHA256>"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-zeptly-agent",
+            "required": false,
+            "description": "Optional agent/user reference recorded in audit events (signed)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-request-id",
+            "required": false,
+            "description": "Correlation id; echoed in responses"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "description": "REQUIRED (missing → 400 IDEMPOTENCY_KEY_REQUIRED). 8-128 chars [A-Za-z0-9._:-]. Replays return the original response; reuse with a different body → IDEMPOTENCY_CONFLICT."
           }
         ],
         "security": [

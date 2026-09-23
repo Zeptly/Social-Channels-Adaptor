@@ -7,6 +7,7 @@ import {
   SocialMetricSchema,
   SocialPostSchema,
   SocialPublicationSchema,
+  UpdatePostRequestSchema,
   page,
 } from "@zeptly-social/domain";
 import type { FastifyInstance } from "fastify";
@@ -61,6 +62,33 @@ export function registerPostRoutes(app: FastifyInstance, ctx: ServiceContext): v
     "/v1/posts/:id",
     { schema: { tags: ["posts"], summary: "Get a post with per-target status", security, headers: workspaceHeaders, params: IdParams, response: { 200: SocialPostSchema, ...errorResponses } } },
     async (req) => posts.getPost(ctx, actorOf(req), req.params.id),
+  );
+
+  r.patch(
+    "/v1/posts/:id",
+    {
+      schema: {
+        tags: ["posts"],
+        summary: "Edit a draft or scheduled post (same post id)",
+        description:
+          "Replaces base content and/or the target list (variants, options). Scheduled posts are re-planned: provider copies already handed off are updated in place when supported (OUTSTAND_POST_UPDATE_ENABLED), otherwise replaced. Rejected once any target is publishing or published.",
+        security,
+        headers: idempotentHeaders,
+        params: IdParams,
+        body: UpdatePostRequestSchema,
+        response: { 200: SocialPostSchema, ...errorResponses },
+      },
+    },
+    async (req, reply) => {
+      const actor = actorOf(req);
+      const key = assertIdempotencyKey(idempotencyHeader(req));
+      const res = await withIdempotency(ctx, actor, "post.update", key, { id: req.params.id, body: req.body }, async () => ({
+        status: 200,
+        body: await posts.updatePost(ctx, actor, req.params.id, req.body),
+      }));
+      if (res.replayed) reply.header("idempotency-replay", "true");
+      return reply.status(200).send(res.body);
+    },
   );
 
   const command = (

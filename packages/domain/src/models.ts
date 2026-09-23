@@ -251,6 +251,16 @@ export const CreatePostRequestSchema = z
   .meta({ id: "CreatePostRequest" });
 export type CreatePostRequest = z.infer<typeof CreatePostRequestSchema>;
 
+export const UpdatePostRequestSchema = z
+  .object({
+    content: SocialContentSchema.optional(),
+    targets: z.array(SocialPostTargetInputSchema).min(1).max(25).optional().describe("Full replacement of the target list (variants/options included)"),
+    externalRef: z.string().max(256).optional(),
+  })
+  .refine((v) => v.content !== undefined || v.targets !== undefined || v.externalRef !== undefined, { message: "Nothing to update" })
+  .meta({ id: "UpdatePostRequest" });
+export type UpdatePostRequest = z.infer<typeof UpdatePostRequestSchema>;
+
 export const SchedulePostRequestSchema = z
   .object({
     scheduledAt: IsoDateTime.describe("Execution instant; any offset accepted, stored as UTC"),

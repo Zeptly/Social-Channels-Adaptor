@@ -15,7 +15,7 @@ import type { NetworkDescriptor, SocialCapabilities, SocialNetwork } from "@zept
  * Constraints are the conservative documented platform limits curated in the
  * reference implementation's channel specifications (verified 2026-09-23).
  */
-export const OUTSTAND_REGISTRY_VERSION = "2026.09.23-1";
+export const OUTSTAND_REGISTRY_VERSION = "2026.09.24-1";
 
 const BASE: SocialCapabilities = {
   connect: true,
@@ -66,6 +66,7 @@ export const OUTSTAND_NETWORKS: Readonly<Record<SocialNetwork, NetworkDescriptor
       options: [
         { key: "mediaType", type: "enum", required: false, values: ["FEED", "REELS", "STORIES"] },
         { key: "shareToFeed", type: "boolean", required: false },
+        { key: "isAiGenerated", type: "boolean", required: false, description: "Meta AI-content disclosure (is_ai_generated → \"AI info\" label)" },
       ],
     },
     notes: [
@@ -87,9 +88,15 @@ export const OUTSTAND_NETWORKS: Readonly<Record<SocialNetwork, NetworkDescriptor
       allowMixedMedia: false,
       image: { maxItems: 10, mimeTypes: ["image/jpeg", "image/png", "image/gif", "image/bmp", "image/tiff"], maxSizeBytes: 4_194_304 },
       video: { maxItems: 1, mimeTypes: ["video/mp4", "video/quicktime"], maxSizeBytes: 10_737_418_240 },
-      options: [],
+      options: [
+        { key: "publishAsReel", type: "boolean", required: false, description: "Publish as a Page Reel: exactly one video; caption allowed" },
+        { key: "publishAsStory", type: "boolean", required: false, description: "Publish as a Page Story: one image or video; no caption" },
+      ],
     },
-    notes: ["Publishes to Facebook Pages. The user selects pages during provisioning."],
+    notes: [
+      "Publishes to Facebook Pages. The user selects pages during provisioning.",
+      "Reels and Stories are separate Graph API edges: a 9:16 video without publishAsReel is a plain Page video. publishAsReel and publishAsStory are mutually exclusive.",
+    ],
   },
   threads: {
     network: "threads",

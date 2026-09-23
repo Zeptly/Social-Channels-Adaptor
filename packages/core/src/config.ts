@@ -26,6 +26,8 @@ export const ConfigSchema = z.object({
   OUTSTAND_SCHEDULING_HORIZON_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   /** Safety margin subtracted from the provider horizon when handing off (clock skew, tick gaps). */
   OUTSTAND_HANDOFF_MARGIN_MINUTES: z.coerce.number().int().min(0).max(24 * 60).default(60),
+  /** Edit handed-off posts in place via Outstand PATCH /posts/{id}; enable after live verification. */
+  OUTSTAND_POST_UPDATE_ENABLED: bool,
   API_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   PORT: z.coerce.number().int().min(1).max(65535).optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

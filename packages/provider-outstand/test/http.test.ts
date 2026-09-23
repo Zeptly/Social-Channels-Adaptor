@@ -96,3 +96,34 @@ describe("Outstand transport", () => {
     await expect(p.uploadFromUrl({ sourceUrl: "https://src.test/a.jpg", filename: "a.jpg", contentType: "image/jpeg", maxBytes: 1000 })).rejects.toThrow(/exceeds/);
   });
 });
+
+describe("post update (PATCH /posts/{id})", () => {
+  const upd = { network: "linkedin" as const, text: "v2", media: [], options: {}, scheduledAt: new Date(Date.now() + 2 * 86_400_000) };
+
+  it("is unsupported unless explicitly enabled", async () => {
+    const { p, calls } = provider(() => json(200, okPost));
+    expect(p.supportsPostUpdate).toBe(false);
+    await expect(p.updatePost("P1", upd)).rejects.toMatchObject({ kind: "unsupported" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("sends containers/scheduledAt without accounts when enabled", async () => {
+    const calls: Array<{ init: RequestInit }> = [];
+    const p = new OutstandProvider({
+      apiKey: KEY,
+      webhookSecret: "whsec_0123456789abcdef",
+      baseUrl: "https://api.test/v1",
+      enablePostUpdate: true,
+      fetchImpl: async (_u, init) => {
+        calls.push({ init: init ?? {} });
+        return json(200, okPost);
+      },
+    });
+    await p.updatePost("P1", upd);
+    expect(calls[0]?.init.method).toBe("PATCH");
+    const body = JSON.parse(String(calls[0]?.init.body));
+    expect(body).not.toHaveProperty("accounts");
+    expect(body.containers).toEqual([{ content: "v2" }]);
+    expect(body.scheduledAt).toBe(upd.scheduledAt.toISOString());
+  });
+});

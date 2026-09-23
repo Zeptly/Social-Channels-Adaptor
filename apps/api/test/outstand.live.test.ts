@@ -69,6 +69,35 @@ suite("LIVE Outstand (opt-in)", () => {
     }
   });
 
+  (allowWrite ? it : it.skip)("[WRITES to dedicated test account] PATCH /posts/{id} edits copy + time in place (gate for OUTSTAND_POST_UPDATE_ENABLED)", async () => {
+    const account = process.env.OUTSTAND_LIVE_TEST_ACCOUNT_ID as string;
+    const editable = new OutstandProvider({
+      apiKey: process.env.OUTSTAND_LIVE_API_KEY ?? "unset",
+      webhookSecret: "live-suite-unused-secret",
+      baseUrl: process.env.OUTSTAND_API_BASE_URL ?? "https://api.outstand.so/v1",
+      enablePostUpdate: true,
+    });
+    const created = await editable.schedule({
+      idempotencyKey: randomUUID(),
+      network: "linkedin",
+      accountExternalIds: [account],
+      text: `Zeptly Social update validation v1 ${new Date().toISOString()}`,
+      media: [],
+      options: {},
+      scheduledAt: new Date(Date.now() + 20 * 86_400_000),
+    });
+    try {
+      const newTime = new Date(Date.now() + 22 * 86_400_000);
+      const updated = await editable.updatePost(created.externalId, { network: "linkedin", text: "Zeptly Social update validation v2", media: [], options: {}, scheduledAt: newTime });
+      expect(updated.externalId).toBe(created.externalId);
+      const fetched = await editable.getPost(created.externalId);
+      expect(fetched.scheduledAt?.toISOString().slice(0, 16)).toBe(newTime.toISOString().slice(0, 16));
+      expect(fetched.targets.map((t) => t.accountExternalId)).toContain(account);
+    } finally {
+      await editable.deletePost(created.externalId);
+    }
+  });
+
   (allowWrite && process.env.OUTSTAND_LIVE_PUBLISH_NOW === "true" ? it : it.skip)("[PUBLISHES publicly to the dedicated test account] immediate publish + metrics", async () => {
     const account = process.env.OUTSTAND_LIVE_TEST_ACCOUNT_ID as string;
     const post = await provider.publish({

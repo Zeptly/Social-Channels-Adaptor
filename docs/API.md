@@ -6,7 +6,7 @@ The machine-readable contract is [`openapi/openapi.json`](../openapi/openapi.jso
 
 - Base path `/v1`. JSON only. Timestamps are ISO-8601. Execution instants are stored in UTC, and any offset is accepted on input.
 - Every workspace route is authenticated with ZS1 signatures, and the workspace comes from `X-Zeptly-Workspace-Id`. See [SECURITY.md](SECURITY.md).
-- Mutating commands require `Idempotency-Key`: `POST /v1/posts`, `/publish`, `/schedule`, `/cancel` and `POST /v1/conversations/{id}/messages`.
+- Mutating commands require `Idempotency-Key`: `POST /v1/posts`, `PATCH /v1/posts/{id}`, `/publish`, `/schedule`, `/cancel` and `POST /v1/conversations/{id}/messages`.
   - The same key with the same request returns the original response, with header `Idempotency-Replay: true`.
   - The same key with a different request returns `409 IDEMPOTENCY_CONFLICT`.
 - Every response carries `X-Request-Id`, echoed from the request or generated.
@@ -72,6 +72,7 @@ Provider diagnostics, when present, sit under `details.provider` (`name`, `kind`
 | POST | `/v1/posts` | Create draft `{content:{text,mediaIds}, targets:[{connectionId, content?, options?}], externalRef?}` |
 | GET | `/v1/posts?status&limit&cursor` | List |
 | GET | `/v1/posts/{id}` | Post with per-target status |
+| PATCH | `/v1/posts/{id}` | Edit a draft or scheduled post `{content?, targets?, externalRef?}` (same id; Idempotency-Key) |
 | POST | `/v1/posts/{id}/publish` | Publish now (202) |
 | POST | `/v1/posts/{id}/schedule` | `{scheduledAt, timezone?}` (any horizon; 202) |
 | POST | `/v1/posts/{id}/cancel` | Cancel unpublished targets |

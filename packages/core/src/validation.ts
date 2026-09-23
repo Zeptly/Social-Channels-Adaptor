@@ -69,5 +69,20 @@ export function validateTargetContent(network: string, c: NetworkConstraints, t:
         break;
     }
   }
+  p.push(...networkRules(network, t));
+  return p;
+}
+
+/** Verified network-specific combinations that constraints tables cannot express. */
+function networkRules(network: string, t: TargetContentFacts): string[] {
+  const p: string[] = [];
+  if (network === "facebook") {
+    const reel = t.options.publishAsReel === true;
+    const story = t.options.publishAsStory === true;
+    if (reel && story) p.push("facebook: publishAsReel and publishAsStory are mutually exclusive");
+    if (reel && (t.media.length !== 1 || t.media[0]?.kind !== "video")) p.push("facebook: a Reel is exactly one video");
+    if (story && t.media.length !== 1) p.push("facebook: a Story is exactly one image or video");
+    if (story && t.text.trim() !== "") p.push("facebook: Stories do not carry a caption; set this target's content.text to \"\"");
+  }
   return p;
 }

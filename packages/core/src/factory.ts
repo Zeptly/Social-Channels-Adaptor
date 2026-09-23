@@ -13,6 +13,7 @@ export function buildProviders(config: AppConfig, logger: Logger, fetchImpl?: ty
       webhookSecret: config.OUTSTAND_WEBHOOK_SECRET,
       baseUrl: config.OUTSTAND_API_BASE_URL,
       schedulingHorizonDays: config.OUTSTAND_SCHEDULING_HORIZON_DAYS,
+      enablePostUpdate: config.OUTSTAND_POST_UPDATE_ENABLED,
       logger: logger.child({ component: "provider-outstand" }),
       ...(fetchImpl ? { fetchImpl } : {}),
     }),

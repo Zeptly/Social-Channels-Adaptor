@@ -294,6 +294,17 @@ export class FakeOutstand {
       const p = this.posts.get(m[1] as string);
       if (!p || (p.deleted && method === "DELETE")) return json(404, { success: false, error: "Not found" });
       if (method === "GET") return json(200, { success: true, data: wirePost(p, this.accounts) });
+      if (method === "PATCH") {
+        if (p.deleted || p.accounts.some((a) => a.status !== "pending")) return json(400, { success: false, error: "Only unpublished posts can be updated" });
+        if (b.accounts !== undefined) return json(400, { success: false, error: "accounts cannot be changed" });
+        if (b.scheduledAt) {
+          const t = new Date(b.scheduledAt as string).getTime();
+          if (t > this.now().getTime() + this.horizonDays * 86_400_000) return json(400, { success: false, error: "scheduledAt cannot be more than 30 days in the future" });
+          p.scheduledAt = b.scheduledAt as string;
+        }
+        p.body = { ...p.body, ...b };
+        return json(200, { success: true, post: wirePost(p, this.accounts) });
+      }
       if (method === "DELETE") {
         p.deleted = true;
         for (const a of p.accounts) if (a.status === "pending") a.status = "deleted";

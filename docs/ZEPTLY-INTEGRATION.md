@@ -89,6 +89,8 @@ POST /v1/posts            Idempotency-Key: <stable key per Zeptly content item/v
   - `REAUTHORIZATION_REQUIRED`: prompt a reconnect.
   - `PUBLICATION_STATE_UNKNOWN`: needs manual review.
 - `partially_published` is a first-class outcome and must be shown as such.
+- Editing: `PATCH /v1/posts/{id}` (with an Idempotency-Key) changes copy, media, variants, options or the target list of a draft or scheduled post, and keeps the same post id. Use `schedule` again to move the time. Edits are refused once any target is publishing or published.
+- Facebook Stories/Reels: set target options `publishAsStory` or `publishAsReel`. A Story takes exactly one image or video and **no caption**, so send `content: { "text": "" }` on that target. Instagram AI disclosure: `isAiGenerated: true`.
 - Media: `POST /v1/media` with a durable HTTPS URL (preferred), then wait for `status=ready` before `publish`/`schedule`. Direct uploads use `source.type=upload` → PUT to `uploadUrl` → `POST /v1/media/{id}/complete`.
 
 Recommended Idempotency-Key strategy: derive keys deterministically from Zeptly ids, e.g. `content:<id>:v<version>` for create and `publish:<postId>:<attempt>` for commands. A retried Zeptly job then reuses the key automatically.

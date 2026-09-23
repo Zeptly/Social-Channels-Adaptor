@@ -94,4 +94,6 @@ pnpm zs GET "/v1/conversations?connectionId=<ig-cid>"
 pnpm zs POST /v1/conversations/<conv>/messages '{"text":"Thanks for reaching out!"}' --idem
 ```
 
+Then enable in-place editing: run the live suite with `OUTSTAND_LIVE_ALLOW_PUBLISH=true` and a dedicated test account. If the `PATCH /posts/{id}` test passes, set `OUTSTAND_POST_UPDATE_ENABLED=true` on both services. Otherwise leave it off; edits then use delete + recreate.
+
 Record for each step: the HTTP status, the canonical status, and any `(to confirm live)` item from [OUTSTAND.md](OUTSTAND.md) that behaved differently from the documentation.

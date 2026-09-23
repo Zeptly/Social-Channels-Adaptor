@@ -11,6 +11,7 @@ import type {
   ProviderPostMetrics,
   ProviderPostState,
   ProviderPublishRequest,
+  ProviderUpdateRequest,
   SocialProvider,
 } from "@zeptly-social/provider-contract";
 import { ProviderError } from "@zeptly-social/provider-contract";
@@ -43,6 +44,11 @@ export interface OutstandProviderOptions {
   fetchImpl?: typeof fetch;
   logger?: Logger;
   requestId?: () => string | undefined;
+  /**
+   * Enable in-place edits via PATCH /posts/{id} (Outstand "Update a post").
+   * Off by default until verified by the live suite (docs/OUTSTAND.md).
+   */
+  enablePostUpdate?: boolean;
   /** Clock (injectable for tests). */
   now?: () => Date;
 }
@@ -58,6 +64,7 @@ export class OutstandProvider implements SocialProvider {
   readonly name = "outstand" as const;
   readonly schedulingHorizonMs: number;
   readonly webhooks: OutstandWebhookVerifier;
+  readonly supportsPostUpdate: boolean;
   private readonly http: OutstandHttp;
   private readonly timeoutMs: number;
   private readonly now: () => Date;
@@ -79,6 +86,7 @@ export class OutstandProvider implements SocialProvider {
     });
     this.webhooks = new OutstandWebhookVerifier(opts.webhookSecret);
     this.schedulingHorizonMs = (opts.schedulingHorizonDays ?? 30) * 86_400_000;
+    this.supportsPostUpdate = opts.enablePostUpdate ?? false;
   }
 
   /* ----------------------------- accounts ---------------------------- */
@@ -249,6 +257,22 @@ export class OutstandProvider implements SocialProvider {
       mutating: true,
       timeoutMs: Math.max(this.timeoutMs, 60_000),
     });
+    return mapPost(extractPost(json));
+  }
+
+  /**
+   * PATCH /posts/{id}: edit copy, media, options or time of an unpublished post
+   * while keeping the same Outstand post reference. Accounts are not changed.
+   */
+  async updatePost(externalId: string, input: ProviderUpdateRequest): Promise<ProviderPostState> {
+    if (!this.supportsPostUpdate) {
+      throw new ProviderError(PROVIDER, "unsupported", "Outstand post update is not enabled", { retryable: false, ambiguous: false });
+    }
+    if (input.scheduledAt.getTime() - this.now().getTime() > this.schedulingHorizonMs) {
+      throw new ProviderError(PROVIDER, "validation", "scheduledAt lies beyond the Outstand scheduling horizon", { retryable: false, ambiguous: false });
+    }
+    const { accounts: _accounts, ...body } = buildCreatePostBody({ ...input, idempotencyKey: "", accountExternalIds: ["_"] });
+    const json = await this.http.request(`/posts/${encodeURIComponent(externalId)}`, { method: "PATCH", body, mutating: true });
     return mapPost(extractPost(json));
   }
 

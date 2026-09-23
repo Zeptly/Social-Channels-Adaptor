@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import {
   type CreatePostRequest,
   type SchedulePostRequest,
+  type SocialContent,
+  type SocialPostTargetInput,
+  type UpdatePostRequest,
   SocialError,
   type SocialNetwork,
   type SocialPost,
@@ -20,8 +23,8 @@ import {
 import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { recordAudit } from "./audit.js";
 import type { Actor, ServiceContext } from "./context.js";
-import { recomputePostStatus, runHandoff } from "./dispatch.js";
-import { loadWorkspaceMedia } from "./media.js";
+import { applyRemoteState, handoffHorizonEnd, recomputePostStatus, runHandoff } from "./dispatch.js";
+import { loadWorkspaceMedia, resolveProviderMedia } from "./media.js";
 import { toSocialError } from "./provider-errors.js";
 import { toPost, toPublication } from "./serializers.js";
 import { assertUuid, getConnectionsForWorkspace } from "./tenancy.js";
@@ -98,6 +101,50 @@ export async function createPost(ctx: ServiceContext, actor: Actor, req: CreateP
     return { post: toPost(existing[0], targets, ws), replayed: true };
   }
 
+  const conns = await validatePostTargets(ctx, ws, req.content, req.targets);
+
+  const created = await ctx.db.transaction(async (tx) => {
+    const [post] = await tx
+      .insert(socialPosts)
+      .values({
+        workspaceId: ws.id,
+        status: "draft",
+        content: req.content,
+        externalRef: req.externalRef ?? null,
+        idempotencyKey,
+        requestHash: hash,
+        createdBy: actor.agent ?? actor.service,
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (!post) return null;
+    const targets = await tx
+      .insert(socialPostTargets)
+      .values(
+        req.targets.map((t) => ({
+          workspaceId: ws.id,
+          postId: post.id,
+          connectionId: t.connectionId,
+          network: (conns.get(t.connectionId) as NonNullable<ReturnType<typeof conns.get>>).connection.network,
+          content: t.content ?? null,
+          options: t.options ?? null,
+          status: "pending",
+        })),
+      )
+      .returning();
+    await recordAudit(tx, actor, { workspaceId: ws.id, action: "post.accepted", resourceType: "post", resourceId: post.id, metadata: { targets: targets.length, externalRef: req.externalRef } });
+    return { post, targets };
+  });
+  if (!created) return createPost(ctx, actor, req, idempotencyKey); // concurrent duplicate: replay
+  return { post: toPost(created.post, created.targets, ws), replayed: false };
+}
+
+/**
+ * Validate targets against the calling workspace's connections, capabilities
+ * and verified network constraints (shared by create and update).
+ */
+async function validatePostTargets(ctx: ServiceContext, ws: Workspace, content: SocialContent, targets: SocialPostTargetInput[]) {
+  const req = { content, targets };
   const connectionIds = req.targets.map((t) => t.connectionId);
   if (new Set(connectionIds).size !== connectionIds.length) throw new SocialError("TARGET_INVALID", "Each connection may be targeted once per post");
   const conns = await getConnectionsForWorkspace(ctx.db, ws.id, connectionIds);
@@ -135,41 +182,7 @@ export async function createPost(ctx: ServiceContext, actor: Actor, req: CreateP
     );
   }
   if (problems.length) throw new SocialError("VALIDATION_ERROR", "Post content is not valid for one or more targets", { details: { problems } });
-
-  const created = await ctx.db.transaction(async (tx) => {
-    const [post] = await tx
-      .insert(socialPosts)
-      .values({
-        workspaceId: ws.id,
-        status: "draft",
-        content: req.content,
-        externalRef: req.externalRef ?? null,
-        idempotencyKey,
-        requestHash: hash,
-        createdBy: actor.agent ?? actor.service,
-      })
-      .onConflictDoNothing()
-      .returning();
-    if (!post) return null;
-    const targets = await tx
-      .insert(socialPostTargets)
-      .values(
-        req.targets.map((t) => ({
-          workspaceId: ws.id,
-          postId: post.id,
-          connectionId: t.connectionId,
-          network: (conns.get(t.connectionId) as NonNullable<ReturnType<typeof conns.get>>).connection.network,
-          content: t.content ?? null,
-          options: t.options ?? null,
-          status: "pending",
-        })),
-      )
-      .returning();
-    await recordAudit(tx, actor, { workspaceId: ws.id, action: "post.accepted", resourceType: "post", resourceId: post.id, metadata: { targets: targets.length, externalRef: req.externalRef } });
-    return { post, targets };
-  });
-  if (!created) return createPost(ctx, actor, req, idempotencyKey); // concurrent duplicate: replay
-  return { post: toPost(created.post, created.targets, ws), replayed: false };
+  return conns;
 }
 
 interface PublicationGroup {
@@ -271,8 +284,9 @@ export async function publishPost(ctx: ServiceContext, actor: Actor, id: string)
 /**
  * POST /v1/posts/:id/schedule — record the canonical schedule. Publications
  * are handed to the provider only once they enter the provider's scheduling
- * horizon (rolling hand-off). Rescheduling cancels any not-yet-published
- * provider copy (delete + recreate; Outstand has no verified reschedule API).
+ * horizon (rolling hand-off). Rescheduling a handed-off post edits it in place
+ * when the provider supports it (Outstand PATCH, feature-flagged), otherwise it
+ * deletes the provider copy and recreates it.
  */
 export async function schedulePost(ctx: ServiceContext, actor: Actor, id: string, req: SchedulePostRequest): Promise<SocialPost> {
   const ws = actor.workspace;
@@ -280,37 +294,173 @@ export async function schedulePost(ctx: ServiceContext, actor: Actor, id: string
   const now = ctx.now();
   if (scheduledAt.getTime() < now.getTime() + MIN_SCHEDULE_AHEAD_MS) throw new SocialError("VALIDATION_ERROR", "scheduledAt must be at least 60 seconds in the future");
   if (scheduledAt.getTime() > now.getTime() + MAX_SCHEDULE_AHEAD_MS) throw new SocialError("VALIDATION_ERROR", "scheduledAt is too far in the future");
-  const { post, targets } = await loadPost(ctx.db, ws, id);
+  const { post } = await loadPost(ctx.db, ws, id);
   if (post.status !== "draft" && post.status !== "scheduled") {
     throw new SocialError("INVALID_STATE", `Post cannot be scheduled from status ${post.status}`, { details: { status: post.status } });
   }
-  const providerByTarget = await assertCapability(ctx, ws, targets, "schedule");
-  if (post.status === "scheduled") await cancelOpenPublications(ctx, actor, post, "reschedule");
+  await replanSchedule(ctx, actor, post, scheduledAt, req.timezone ?? null, post.status === "scheduled" ? "schedule.changed" : "schedule.created");
+  return getPost(ctx, actor, id);
+}
+
+/**
+ * PATCH /v1/posts/:id — edit copy, media, per-target variants/options (and the
+ * target set) of a draft or scheduled post, keeping the same post id. Scheduled
+ * posts are re-planned: handed-off provider copies are updated in place where
+ * supported, otherwise replaced.
+ */
+export async function updatePost(ctx: ServiceContext, actor: Actor, id: string, req: UpdatePostRequest): Promise<SocialPost> {
+  const ws = actor.workspace;
+  const { post, targets } = await loadPost(ctx.db, ws, id);
+  if (post.status !== "draft" && post.status !== "scheduled") {
+    throw new SocialError("INVALID_STATE", `Post cannot be edited from status ${post.status}`, { details: { status: post.status } });
+  }
+  if (targets.some((t) => t.status === "published" || t.status === "publishing")) {
+    throw new SocialError("INVALID_STATE", "Part of this post is already publishing or published and cannot be edited");
+  }
+  const content = req.content ?? post.content;
+  const nextTargets: SocialPostTargetInput[] =
+    req.targets ??
+    targets.map((t) => ({ connectionId: t.connectionId, ...(t.content ? { content: t.content } : {}), ...(t.options ? { options: t.options } : {}) }));
+  const conns = await validatePostTargets(ctx, ws, content, nextTargets);
+  const now = ctx.now();
+  const updated = await ctx.db.transaction(async (tx) => {
+    const [fresh] = await tx.select().from(socialPosts).where(eq(socialPosts.id, post.id)).for("update");
+    if (!fresh || fresh.status !== post.status) throw new SocialError("INVALID_STATE", "Post state changed concurrently; retry", { retryable: true });
+    const [row] = await tx
+      .update(socialPosts)
+      .set({ content, ...(req.externalRef !== undefined ? { externalRef: req.externalRef } : {}), updatedAt: now })
+      .where(eq(socialPosts.id, post.id))
+      .returning();
+    const byConnection = new Map(targets.map((t) => [t.connectionId, t]));
+    const wanted = new Set(nextTargets.map((t) => t.connectionId));
+    for (const t of nextTargets) {
+      const existing = byConnection.get(t.connectionId);
+      if (existing) {
+        await tx.update(socialPostTargets).set({ content: t.content ?? null, options: t.options ?? null, updatedAt: now }).where(eq(socialPostTargets.id, existing.id));
+      } else {
+        await tx.insert(socialPostTargets).values({
+          workspaceId: ws.id,
+          postId: post.id,
+          connectionId: t.connectionId,
+          network: (conns.get(t.connectionId) as NonNullable<ReturnType<typeof conns.get>>).connection.network,
+          content: t.content ?? null,
+          options: t.options ?? null,
+          status: post.status === "scheduled" ? "scheduled" : "pending",
+        });
+      }
+    }
+    const removed = targets.filter((t) => !wanted.has(t.connectionId)).map((t) => t.id);
+    // Removed targets are detached here; their provider copies are cancelled by the re-plan below.
+    if (removed.length) await tx.update(socialPostTargets).set({ status: "cancelled", updatedAt: now }).where(inArray(socialPostTargets.id, removed));
+    await recordAudit(tx, actor, {
+      workspaceId: ws.id,
+      action: "post.updated",
+      resourceType: "post",
+      resourceId: post.id,
+      metadata: { targets: nextTargets.length, removed: removed.length, status: post.status },
+    });
+    return row ?? post;
+  });
+  if (updated.status === "scheduled" && updated.scheduledAt) {
+    await replanSchedule(ctx, actor, updated, updated.scheduledAt, updated.timezone, "schedule.content_changed");
+    // Drop detached targets from the post once their publications are cancelled.
+    await ctx.db.delete(socialPostTargets).where(and(eq(socialPostTargets.postId, post.id), eq(socialPostTargets.status, "cancelled")));
+  } else {
+    await ctx.db.delete(socialPostTargets).where(and(eq(socialPostTargets.postId, post.id), eq(socialPostTargets.status, "cancelled")));
+  }
+  return getPost(ctx, actor, id);
+}
+
+/**
+ * Bring a post's publications in line with its current content, targets and
+ * schedule. Handed-off provider posts whose target set is unchanged are updated
+ * in place when the provider supports it; everything else not yet published is
+ * cancelled (provider copy deleted) and recreated.
+ */
+async function replanSchedule(ctx: ServiceContext, actor: Actor, post: SocialPostRow, scheduledAt: Date, timezone: string | null, auditAction: string): Promise<void> {
+  const ws = actor.workspace;
+  const now = ctx.now();
+  const liveTargets = (await ctx.db.select().from(socialPostTargets).where(eq(socialPostTargets.postId, post.id))).filter((t) => t.status !== "cancelled");
+  const providerByTarget = await assertCapability(ctx, ws, liveTargets, "schedule");
+  const providerFor = (t: SocialPostTargetRow) => providerByTarget.get(t.id) as string;
+  const kept = post.status === "scheduled" ? await updateHandedOffInPlace(ctx, actor, post, liveTargets, providerFor, scheduledAt) : new Set<string>();
+  if (post.status === "scheduled") await cancelOpenPublications(ctx, actor, post, "reschedule", kept);
 
   const pubIds = await ctx.db.transaction(async (tx) => {
     const [fresh] = await tx.select().from(socialPosts).where(eq(socialPosts.id, post.id)).for("update");
     if (!fresh || (fresh.status !== "draft" && fresh.status !== "scheduled")) throw new SocialError("INVALID_STATE", "Post state changed concurrently");
-    const current = await tx.select().from(socialPostTargets).where(eq(socialPostTargets.postId, post.id));
-    const ids = await createPublications(tx, fresh, current, (t) => providerByTarget.get(t.id) as string, { mode: "scheduled", publishAt: scheduledAt, targetStatus: "scheduled" });
-    await tx.update(socialPosts).set({ status: "scheduled", scheduledAt, timezone: req.timezone ?? null, updatedAt: now }).where(eq(socialPosts.id, post.id));
+    const current = (await tx.select().from(socialPostTargets).where(eq(socialPostTargets.postId, post.id))).filter(
+      (t) => t.status !== "cancelled" && !(t.publicationId && kept.has(t.publicationId)),
+    );
+    const ids = await createPublications(tx, fresh, current, providerFor, { mode: "scheduled", publishAt: scheduledAt, targetStatus: "scheduled" });
+    await tx.update(socialPosts).set({ status: "scheduled", scheduledAt, timezone, updatedAt: now }).where(eq(socialPosts.id, post.id));
     await tx
       .insert(socialSchedules)
-      .values({ workspaceId: ws.id, postId: post.id, scheduledAt, timezone: req.timezone ?? null, status: "active" })
+      .values({ workspaceId: ws.id, postId: post.id, scheduledAt, timezone, status: "active" })
       .onConflictDoUpdate({
         target: socialSchedules.postId,
-        set: { scheduledAt, timezone: req.timezone ?? null, status: "active", revision: sqlIncrement(), updatedAt: now },
+        set: { scheduledAt, timezone, status: "active", revision: sqlIncrement(), updatedAt: now },
       });
     await recordAudit(tx, actor, {
       workspaceId: ws.id,
-      action: post.status === "scheduled" ? "schedule.changed" : "schedule.created",
+      action: auditAction,
       resourceType: "post",
       resourceId: post.id,
-      metadata: { scheduledAt: scheduledAt.toISOString(), previous: post.scheduledAt?.toISOString(), timezone: req.timezone },
+      metadata: { scheduledAt: scheduledAt.toISOString(), previous: post.scheduledAt?.toISOString(), timezone, updatedInPlace: kept.size },
     });
     return ids;
   });
   if (pubIds.length && ctx.settings.inlineDispatch) await runHandoff(ctx, `api:${actor.requestId}`, { ids: pubIds });
-  return getPost(ctx, actor, id);
+}
+
+function sameSet(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((x) => b.includes(x));
+}
+
+/** Returns the ids of handed-off publications that were updated in place at the provider. */
+async function updateHandedOffInPlace(
+  ctx: ServiceContext,
+  actor: Actor,
+  post: SocialPostRow,
+  targets: SocialPostTargetRow[],
+  providerFor: (t: SocialPostTargetRow) => string,
+  publishAt: Date,
+): Promise<Set<string>> {
+  const kept = new Set<string>();
+  const pubs = await ctx.db
+    .select()
+    .from(socialPublications)
+    .where(and(eq(socialPublications.postId, post.id), eq(socialPublications.workspaceId, post.workspaceId), eq(socialPublications.status, "accepted")));
+  if (pubs.length === 0) return kept;
+  const groups = groupTargets(post, targets, providerFor);
+  for (const pub of pubs) {
+    if (!pub.providerPostId) continue;
+    const provider = ctx.providers.get(pub.provider);
+    if (!provider.supportsPostUpdate || !provider.updatePost) continue;
+    if (publishAt.getTime() > handoffHorizonEnd(ctx.now(), provider.schedulingHorizonMs, ctx.settings.handoffMarginMs).getTime()) continue;
+    const pubTargetIds = targets.filter((t) => t.publicationId === pub.id).map((t) => t.id);
+    const group = groups.find((g) => g.provider === pub.provider && sameSet(g.targetIds, pubTargetIds));
+    if (!group) continue;
+    try {
+      const media = await resolveProviderMedia(ctx, pub.workspaceId, group.mediaIds, publishAt);
+      const remote = await provider.updatePost(pub.providerPostId, {
+        network: group.network as SocialNetwork,
+        text: group.text,
+        media,
+        options: group.options,
+        scheduledAt: publishAt,
+      });
+      const snapshot = { text: group.text, mediaIds: group.mediaIds, options: group.options };
+      await ctx.db.update(socialPublications).set({ snapshot, publishAt, updatedAt: ctx.now() }).where(eq(socialPublications.id, pub.id));
+      await applyRemoteState(ctx, { ...pub, snapshot, publishAt }, remote, { source: "reconcile" });
+      await recordAudit(ctx.db, actor, { workspaceId: post.workspaceId, action: "publication.updated_in_place", resourceType: "publication", resourceId: pub.id, metadata: { postId: post.id } });
+      kept.add(pub.id);
+    } catch (err) {
+      // Any failure falls back to the verified delete + recreate path.
+      ctx.logger.warn({ publicationId: pub.id, err }, "in-place provider update failed; falling back to delete + recreate");
+    }
+  }
+  return kept;
 }
 
 function sqlIncrement() {
@@ -318,15 +468,18 @@ function sqlIncrement() {
 }
 
 /**
- * Cancel every not-yet-terminal publication of a post. Provider copies that were
- * already handed off are deleted at the provider first (capability `delete`).
- * A publication currently being dispatched makes the call fail with INVALID_STATE (retry shortly).
+ * Cancel every not-yet-terminal publication of a post (except `keep`). Provider
+ * copies that were already handed off are deleted at the provider first
+ * (capability `delete`). A publication currently being dispatched makes the
+ * call fail with INVALID_STATE (retry shortly).
  */
-async function cancelOpenPublications(ctx: ServiceContext, actor: Actor, post: SocialPostRow, reason: "reschedule" | "cancel"): Promise<void> {
-  const pubs = await ctx.db
-    .select()
-    .from(socialPublications)
-    .where(and(eq(socialPublications.postId, post.id), eq(socialPublications.workspaceId, post.workspaceId), inArray(socialPublications.status, ["pending", "retry_pending", "dispatching", "accepted"])));
+async function cancelOpenPublications(ctx: ServiceContext, actor: Actor, post: SocialPostRow, reason: "reschedule" | "cancel", keep: Set<string> = new Set()): Promise<void> {
+  const pubs = (
+    await ctx.db
+      .select()
+      .from(socialPublications)
+      .where(and(eq(socialPublications.postId, post.id), eq(socialPublications.workspaceId, post.workspaceId), inArray(socialPublications.status, ["pending", "retry_pending", "dispatching", "accepted"])))
+  ).filter((p) => !keep.has(p.id));
   if (pubs.some((p) => p.status === "dispatching")) {
     throw new SocialError("INVALID_STATE", "The post is being handed to the provider right now; retry shortly", { retryable: true });
   }

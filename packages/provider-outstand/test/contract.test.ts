@@ -120,3 +120,23 @@ describe("create-post request body", () => {
     expect(b.containers[0]?.media).toEqual([{ id: "m1", url: "https://cdn/x.jpg", filename: "x.jpg" }]);
   });
 });
+
+describe("2026-09 Outstand additions", () => {
+  it("maps Facebook Reels/Stories and Instagram AI disclosure options", () => {
+    const base = { idempotencyKey: "k", accountExternalIds: ["A1"], text: "", media: [], options: {} };
+    expect(buildCreatePostBody({ ...base, network: "facebook", options: { publishAsReel: true } }).facebook).toEqual({ publishAsReel: true });
+    expect(buildCreatePostBody({ ...base, network: "instagram", options: { isAiGenerated: true, trialParams: {} } }).instagram).toEqual({ isAiGenerated: true });
+  });
+
+  it("passes through additional numeric metrics Outstand reports (e.g. Reels/Story metrics)", () => {
+    const m = mapAnalytics({
+      success: true,
+      metrics_by_account: [{ social_account: { id: "A1", network: "instagram" }, metrics: { likes: 1, reels_views: 900, story_replies: 3, label: "x", "bad key!": 5, platform_specific: {} } }],
+    });
+    expect(m[0]?.metrics).toEqual([
+      { name: "likes", value: 1 },
+      { name: "reels_views", value: 900 },
+      { name: "story_replies", value: 3 },
+    ]);
+  });
+});

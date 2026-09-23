@@ -39,6 +39,7 @@ These steps require a human with Railway access. The build environment could not
 | `OUTSTAND_API_BASE_URL` | ✓ | ✓ | | `https://api.outstand.so/v1` |
 | `OUTSTAND_SCHEDULING_HORIZON_DAYS` | ✓ | ✓ | | `30` |
 | `OUTSTAND_HANDOFF_MARGIN_MINUTES` | ✓ | ✓ | | `60` (optional) |
+| `OUTSTAND_POST_UPDATE_ENABLED` | ✓ | ✓ | | `false`; set `true` only after the live PATCH test passes |
 | `PUBLIC_BASE_URL` | ✓ | ✓ | | `https://${{RAILWAY_PUBLIC_DOMAIN}}` on the API; the API's value on the worker |
 | `ALLOWED_RETURN_URL_ORIGINS` | ✓ | ✓ | | Zeptly web origin(s), comma-separated, e.g. `https://app.zeptly.com` |
 | `API_PORT` / `PORT` | ✓ | | | Railway injects `PORT`; `API_PORT` overrides it |
