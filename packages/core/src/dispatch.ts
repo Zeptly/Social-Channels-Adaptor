@@ -389,8 +389,7 @@ export async function recomputePostStatus(tx: Executor, postId: string, workspac
 /** Claim + dispatch eligible publications (worker hand-off tick, or API publish-now). */
 export async function runHandoff(ctx: ServiceContext, workerId: string, opts: { limit?: number; ids?: string[] } = {}): Promise<DispatchOutcome[]> {
   const outcomes: DispatchOutcome[] = [];
-  for (const provider of ["outstand"]) {
-    if (!ctx.providers.has(provider)) continue;
+  for (const provider of ctx.providers.names()) {
     const claimed = await claimPublications(ctx, { workerId, limit: opts.limit ?? 25, provider, ...(opts.ids ? { ids: opts.ids } : {}) });
     for (const pub of claimed) outcomes.push(await dispatchClaimed(ctx, pub, workerId));
   }

@@ -445,8 +445,7 @@ export interface ConnectionReconcileSummary {
  */
 export async function reconcileConnections(ctx: ServiceContext, actor: Actor | SystemActor, workspace?: Workspace): Promise<ConnectionReconcileSummary> {
   const summary: ConnectionReconcileSummary = { checked: 0, changed: 0, adopted: 0 };
-  for (const providerName of ["outstand"] as const) {
-    if (!ctx.providers.has(providerName)) continue;
+  for (const providerName of ctx.providers.names()) {
     const provider = ctx.providers.get(providerName);
     let remote: ProviderAccount[];
     try {

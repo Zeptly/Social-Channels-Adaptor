@@ -1,4 +1,4 @@
-import { OUTSTAND_NETWORKS } from "@zeptly-social/capability-registry";
+import { CapabilityRouter } from "@zeptly-social/capability-registry";
 import { type MediaKind, type RegisterMediaRequest, type SocialMedia, SocialError } from "@zeptly-social/domain";
 import { type Executor, type SocialMediaRow, socialMedia, type Workspace } from "@zeptly-social/database";
 import type { ProviderMedia } from "@zeptly-social/provider-contract";
@@ -12,9 +12,9 @@ import { assertUuid } from "./tenancy.js";
 import { assertPublicHttpsUrl } from "./url-safety.js";
 
 /** Union of mime types / size limits across supported networks (per-network checks happen at post validation). */
-function mediaPolicy(): Record<MediaKind, { mimeTypes: Set<string>; maxBytes: number }> {
+function mediaPolicy(router: CapabilityRouter): Record<MediaKind, { mimeTypes: Set<string>; maxBytes: number }> {
   const policy = { image: { mimeTypes: new Set<string>(), maxBytes: 0 }, video: { mimeTypes: new Set<string>(), maxBytes: 0 } };
-  for (const d of Object.values(OUTSTAND_NETWORKS)) {
+  for (const d of router.networks()) {
     for (const kind of ["image", "video"] as const) {
       const c = d.constraints[kind];
       if (!c) continue;
@@ -28,7 +28,7 @@ function mediaPolicy(): Record<MediaKind, { mimeTypes: Set<string>; maxBytes: nu
   return policy;
 }
 
-export const MEDIA_POLICY = mediaPolicy();
+export const MEDIA_POLICY = mediaPolicy(new CapabilityRouter());
 
 export function mediaKindFor(contentType: string): MediaKind {
   const ct = contentType.toLowerCase();
@@ -47,7 +47,11 @@ export async function registerMedia(ctx: ServiceContext, actor: Actor, req: Regi
     throw new SocialError("MEDIA_INVALID", "Media exceeds the maximum supported size", { details: { maxBytes: MEDIA_POLICY[kind].maxBytes } });
   }
   const ws = actor.workspace;
-  const providerName = ctx.router.resolve({ capability: "media", network: "instagram", workspaceId: ws.externalId });
+  // Media is registered once and handed to the provider that serves media; in V1
+  // every network's media capability resolves to the same provider.
+  const mediaNetwork = ctx.router.networks().find((n) => n.capabilities.media)?.network;
+  if (!mediaNetwork) throw new SocialError("CAPABILITY_NOT_SUPPORTED", "No provider supports media");
+  const providerName = ctx.router.resolve({ capability: "media", network: mediaNetwork, workspaceId: ws.externalId });
   const provider = ctx.providers.get(providerName);
 
   if (req.source.type === "upload") {

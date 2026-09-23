@@ -288,6 +288,10 @@ export class ProviderRegistry {
     return p;
   }
 
+  names(): string[] {
+    return [...this.providers.keys()];
+  }
+
   has(name: string): boolean {
     return this.providers.has(name);
   }

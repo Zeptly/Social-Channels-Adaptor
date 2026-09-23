@@ -2,7 +2,7 @@ import { ProviderError } from "@zeptly-social/provider-contract";
 import { describe, expect, it } from "vitest";
 import { OutstandProvider } from "../src/provider.js";
 
-const KEY = "sk_live_outstand_secret_key_123";
+const KEY = "test_fake_outstand_key_0123456789";
 
 function provider(responder: (req: { url: string; init: RequestInit; n: number }) => Response | Promise<Response>) {
   let n = 0;
