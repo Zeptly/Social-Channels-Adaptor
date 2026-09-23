@@ -1,0 +1,19 @@
+{
+  "name": "@zeptly-social/core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zeptly-social/domain": "workspace:*",
+    "@zeptly-social/database": "workspace:*",
+    "@zeptly-social/provider-contract": "workspace:*",
+    "@zeptly-social/provider-outstand": "workspace:*",
+    "@zeptly-social/capability-registry": "workspace:*",
+    "@zeptly-social/observability": "workspace:*",
+    "drizzle-orm": "^0.45.3",
+    "zod": "^4.1.5"
+  }
+}

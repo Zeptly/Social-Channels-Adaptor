@@ -1,0 +1,48 @@
+{
+  "name": "zeptly-social",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Zeptly Social — provider-neutral headless social infrastructure gateway for Zeptly",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "dev:api": "pnpm --filter @zeptly-social/api dev",
+    "dev:worker": "pnpm --filter @zeptly-social/worker dev",
+    "dev:mock-outstand": "tsx packages/test-utils/src/mock-outstand-server.ts",
+    "build": "pnpm -r --filter ./apps/* build",
+    "build:api": "pnpm --filter @zeptly-social/api build",
+    "build:worker": "pnpm --filter @zeptly-social/worker build",
+    "start:api": "node apps/api/dist/main.js",
+    "start:worker": "node apps/worker/dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:live": "OUTSTAND_LIVE_TESTS=true vitest run --project live",
+    "db:generate": "drizzle-kit generate --config packages/database/drizzle.config.ts",
+    "db:migrate": "tsx packages/database/src/migrate.ts",
+    "db:check": "drizzle-kit check --config packages/database/drizzle.config.ts && tsx scripts/check-migrations.ts",
+    "db:seed": "tsx packages/database/src/seed.ts",
+    "openapi:generate": "tsx apps/api/src/scripts/generate-openapi.ts",
+    "openapi:check": "tsx apps/api/src/scripts/generate-openapi.ts --check",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm openapi:check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^22.20.4",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^9.39.5",
+    "globals": "^16.0.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^4.1.11"
+  }
+}

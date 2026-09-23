@@ -1,0 +1,31 @@
+{
+  "name": "@zeptly-social/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsup",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@fastify/swagger": "^9.9.0",
+    "@zeptly-social/capability-registry": "workspace:*",
+    "@zeptly-social/core": "workspace:*",
+    "@zeptly-social/database": "workspace:*",
+    "@zeptly-social/domain": "workspace:*",
+    "@zeptly-social/observability": "workspace:*",
+    "@zeptly-social/provider-contract": "workspace:*",
+    "@zeptly-social/provider-outstand": "workspace:*",
+    "drizzle-orm": "^0.45.3",
+    "fastify": "^5.12.5",
+    "fastify-type-provider-zod": "^7.0.0",
+    "openapi-types": "^12.1.3",
+    "pg": "^8.23.0",
+    "pino": "^10.3.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@zeptly-social/test-utils": "workspace:*"
+  }
+}
