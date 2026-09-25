@@ -16,7 +16,7 @@ export function createDatabase(url: string, opts: { max?: number; applicationNam
   const pool = new pg.Pool({
     connectionString: url,
     max: opts.max ?? 10,
-    application_name: opts.applicationName ?? "zeptly-social",
+    application_name: opts.applicationName ?? "outstand-gateway",
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
   });

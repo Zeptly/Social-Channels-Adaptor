@@ -9,9 +9,9 @@
 | Outstand webhooks (signed) | Event facts about provider references we already map | Establishing ownership; unknown references are ignored |
 | End-user browser (callback) | Nothing beyond presenting the state token | — |
 
-## Service-to-service authentication (Zeptly → Zeptly Social)
+## Service-to-service authentication (Zeptly → Outstand Gateway)
 
-Scheme `ZS1-HMAC-SHA256` with the shared `ZEPTLY_SERVICE_SECRET` (≥ 32 chars). Implemented in `apps/api/src/auth.ts`.
+Scheme `ZS1-HMAC-SHA256` with the shared `ZEPTLY_SERVICE_SECRET` (≥ 32 chars). Implemented in `packages/gateway-core/src/auth.ts` (Gateway Contract v1: every Zeptly gateway uses the same scheme).
 
 Headers: `X-Zeptly-Caller`, `X-Zeptly-Workspace-Id` (workspace routes), optional `X-Zeptly-Agent`, `X-Zeptly-Timestamp` (unix seconds, ±300 s), `X-Zeptly-Signature: v1=<hex>`, optional `X-Request-Id`.
 
@@ -23,14 +23,14 @@ signature = "v1=" + hex(HMAC-SHA256(ZEPTLY_SERVICE_SECRET, canonical))
 
 - The workspace, caller, agent, path, method and body are all signed, so a captured request cannot be replayed against another workspace, path or body (tested).
 - The workspace comes only from the signed header. No route accepts a workspace id in the path or body, so a mismatch between the two cannot occur.
-- Routes are `workspace` (default), `service` (`/v1/admin/*`: authenticated, no workspace, diagnostics only) or `public` (`/health`, `/ready`, `/openapi.json`, `/v1/webhooks/outstand` which is HMAC-verified, and `/v1/connect/callback/:state` which is state-token bound).
+- Routes are `workspace` (default), `service` (`/v1/gateway*` and `/v1/admin/*`: authenticated, no workspace, no tenant content) or `public` (`/health`, `/ready`, `/openapi.json`, `/v1/webhooks/outstand` which is HMAC-verified, and `/v1/connect/callback/:state` which is state-token bound).
 - **Replay window.** A request can be replayed verbatim within ±5 minutes. Mutating commands are nevertheless idempotent (Idempotency-Key), so a replay cannot create duplicates.
 - **Migration path.** `ServiceAuthenticator` is an interface. An asymmetric implementation (Ed25519-signed requests, or JWT service identity verified against a JWKS) can replace `HmacServiceAuthenticator` in `apps/api/src/main.ts` without changing any endpoint.
 
 ### Key rotation
 
 1. Generate a new secret: `openssl rand -base64 48`.
-2. On Zeptly Social (API service), set `ZEPTLY_SERVICE_SECRET_PREVIOUS=<old>` and `ZEPTLY_SERVICE_SECRET=<new>`, then redeploy. Both secrets are now accepted.
+2. On the Outstand Gateway (API service), set `ZEPTLY_SERVICE_SECRET_PREVIOUS=<old>` and `ZEPTLY_SERVICE_SECRET=<new>`, then redeploy. Both secrets are now accepted.
 3. Switch Zeptly to sign with the new secret, and deploy Zeptly.
 4. Remove `ZEPTLY_SERVICE_SECRET_PREVIOUS` and redeploy.
 
@@ -38,12 +38,12 @@ The Outstand webhook secret rotates by updating it in Outstand's webhook setting
 
 ## Workspace isolation
 
-- Every tenant-owned row has `workspace_id`. Every service function takes the authenticated `Actor` and filters by `workspace_id`. Tenancy guards live in `packages/core/src/tenancy.ts`.
-- `request workspace → social connection → provider account mapping → operation` is verified on every provider operation. The join requires `provider_accounts.workspace_id = social_connections.workspace_id = actor workspace`.
+- Every tenant-owned row has `workspace_id`. Every service function takes the authenticated `Actor` and filters by `workspace_id`. Tenancy guards live in `packages/gateway-core/src/tenancy.ts`, below every capability package.
+- `request workspace → gateway connection → Outstand provider account mapping → operation` is verified on every provider operation. The join requires `provider_accounts.workspace_id = gateway_connections.workspace_id = actor workspace`. Capability services receive provider account ids only from this join; the provider-neutral ports (`SocialPublishingPort`, …) never accept a workspace, so an adapter has no way to widen access.
 - `provider_accounts` has `UNIQUE(provider, external_id)`. A provider account belongs to at most one workspace. Provisioning that returns an account already owned elsewhere is refused (`CONNECTION_OWNERSHIP_CONFLICT`) and audited.
 - Ownership is never inferred from network or username. Adoption during reconciliation requires both the workspace's opaque tenant ref and a recent provisioning session for that network.
 - Other workspaces' resources return **404**, not 403. There is no existence oracle.
-- Webhooks resolve provider references only through stored mappings. Unknown references are ignored.
+- Webhooks resolve provider references only through stored mappings. Unknown references are ignored. This holds for every event kind: gateway-core resolves `account.reauthorization_required` and Direct Messages resolves `social.direct_message` via `findAccountByExternalId`, while Social Publishing matches `social.publication_outcome` only against publications this gateway created.
 - Automated cross-tenant tests are in `apps/api/test/security.int.test.ts`. They cover connections, posts, schedules, publications, media, metrics, conversations, messages, raw provider ids used as connection ids, ownership-conflict adoption, and webhooks for another tenant's account.
 
 ## Provider credentials and secrets
@@ -51,7 +51,7 @@ The Outstand webhook secret rotates by updating it in Outstand's webhook setting
 - `OUTSTAND_API_KEY` and `OUTSTAND_WEBHOOK_SECRET` are server-side environment variables only. They never reach Zeptly or any browser.
 - Bluesky app passwords (credentials strategy) are forwarded once over TLS and **never persisted or logged**. The redaction key list covers `appPassword`, `app_password` and `credentials`.
 - Outstand's pending-session handle is stored only for the short provisioning window and cleared on completion or expiry. The OAuth state token is stored only as a SHA-256 hash.
-- Outstand post responses embed per-network OAuth tokens (`network_data`). The adapter's allowlist mapping drops them. Tests assert they never reach responses or the database.
+- Outstand post responses embed per-network OAuth tokens (`network_data`). The Outstand client's allowlist mapping (private `wire.ts`) drops them before any typed result leaves `@zeptly-gateway/outstand-client`. Tests assert they never reach responses or the database, and `test/architecture.test.ts` asserts the wire schemas are not importable outside the client and that OpenAPI exposes no `externalId`, `providerPostId` or `network_data`.
 
 ## Logging and redaction
 
@@ -65,7 +65,17 @@ Pino JSON logs, implemented in `packages/observability`:
 
 ## Webhook security
 
-HMAC-SHA256 over the raw bytes in constant time, with the `sha256=<64 hex>` format required. An invalid signature gets 401 and nothing is stored or processed. Receipts are deduplicated by a unique event identity. Only posts created by this service can trigger an Outstand call, which is the amplification protection. The service refuses to start without `OUTSTAND_WEBHOOK_SECRET` (fail closed).
+HMAC-SHA256 over the raw bytes in constant time, with the `sha256=<64 hex>` format required. An invalid signature gets 401 and nothing is stored or processed. Receipts are deduplicated by a unique event identity. Only posts created by this gateway can trigger an Outstand call, which is the amplification protection. The service refuses to start without `OUTSTAND_WEBHOOK_SECRET` (fail closed).
+
+## Architecture-level guarantees (tests)
+
+| Guarantee | Test |
+| --- | --- |
+| Outstand wire types do not escape `outstand-client`; only `outstand-gateway` and `adapters/*/src/outstand` import the client | `test/architecture.test.ts` |
+| gateway-core (tenancy, auth, ownership) imports no provider or capability code | `test/architecture.test.ts` |
+| API responses and OpenAPI expose no credentials or provider ids | `apps/api/test/gateway.int.test.ts`, `security.int.test.ts`, `publishing.int.test.ts` |
+| Provider account ids cannot establish workspace access (raw ids as connection ids, webhooks for another tenant's account, ownership-conflict adoption) | `apps/api/test/security.int.test.ts` |
+| Capability services cannot bypass tenant ownership (they are driven only through workspace-scoped `Actor`s and stored mappings; verified with a non-Outstand port) | `packages/adapters/social-publishing/test/portability.int.test.ts` |
 
 ## Other controls
 

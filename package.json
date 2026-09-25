@@ -1,5 +1,5 @@
 {
-  "name": "zeptly-social",
+  "name": "outstand-gateway",
   "private": true,
   "version": "1.0.0",
   "description": "Zeptly Social \u2014 provider-neutral headless social infrastructure gateway for Zeptly",
@@ -10,12 +10,12 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm -r --parallel --filter \"./apps/*\" dev",
-    "dev:api": "pnpm --filter @zeptly-social/api dev",
-    "dev:worker": "pnpm --filter @zeptly-social/worker dev",
+    "dev:api": "pnpm --filter @zeptly-gateway/api dev",
+    "dev:worker": "pnpm --filter @zeptly-gateway/worker dev",
     "dev:mock-outstand": "tsx packages/test-utils/src/mock-outstand-server.ts",
     "build": "pnpm -r --filter \"./apps/*\" build",
-    "build:api": "pnpm --filter @zeptly-social/api build",
-    "build:worker": "pnpm --filter @zeptly-social/worker build",
+    "build:api": "pnpm --filter @zeptly-gateway/api build",
+    "build:worker": "pnpm --filter @zeptly-gateway/worker build",
     "start:api": "node apps/api/dist/main.js",
     "start:worker": "node apps/worker/dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",

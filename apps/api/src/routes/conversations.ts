@@ -1,5 +1,6 @@
-import { assertIdempotencyKey, conversations, type ServiceContext } from "@zeptly-social/core";
-import { PaginationQuerySchema, page, SendMessageRequestSchema, SocialConversationSchema, SocialMessageSchema } from "@zeptly-social/domain";
+import { PaginationQuerySchema, page } from "@zeptly-gateway/gateway-contract";
+import { assertIdempotencyKey } from "@zeptly-gateway/gateway-core";
+import { conversations, SendMessageRequestSchema, type SocialDirectMessagesContext, SocialConversationSchema, SocialMessageSchema } from "@zeptly-gateway/social-direct-messages";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { actorOf, errorResponses, idempotencyHeader } from "../app.js";
@@ -8,16 +9,21 @@ import { IdParams, idempotentHeaders, security, workspaceHeaders, zapp } from ".
 const ConversationPage = page(SocialConversationSchema, "SocialConversationPage");
 const MessagePage = page(SocialMessageSchema, "SocialMessagePage");
 
-export function registerConversationRoutes(app: FastifyInstance, ctx: ServiceContext): void {
+/** Social Direct Messages Contract v1 (canonical under /v1/social/direct-messages; /v1/conversations is a deprecated alias). */
+export function registerConversationRoutes(app: FastifyInstance, ctx: SocialDirectMessagesContext): void {
+  for (const base of ["/v1/social/direct-messages", "/v1"]) registerAt(app, ctx, base);
+}
+
+function registerAt(app: FastifyInstance, ctx: SocialDirectMessagesContext, base: string): void {
   const r = zapp(app);
   const note =
     "Capability-gated. V1 supports Instagram direct messages only; other networks return CAPABILITY_NOT_SUPPORTED (check connection.capabilities.conversations).";
 
   r.get(
-    "/v1/conversations",
+    `${base}/conversations`,
     {
       schema: {
-        tags: ["conversations"],
+        tags: ["social-direct-messages"],
         summary: "List conversations",
         description: note,
         security,
@@ -35,16 +41,16 @@ export function registerConversationRoutes(app: FastifyInstance, ctx: ServiceCon
   );
 
   r.get(
-    "/v1/conversations/:id",
-    { schema: { tags: ["conversations"], summary: "Get a conversation", description: note, security, headers: workspaceHeaders, params: IdParams, response: { 200: SocialConversationSchema, ...errorResponses } } },
+    `${base}/conversations/:id`,
+    { schema: { tags: ["social-direct-messages"], summary: "Get a conversation", description: note, security, headers: workspaceHeaders, params: IdParams, response: { 200: SocialConversationSchema, ...errorResponses } } },
     async (req) => conversations.getConversation(ctx, actorOf(req), req.params.id),
   );
 
   r.get(
-    "/v1/conversations/:id/messages",
+    `${base}/conversations/:id/messages`,
     {
       schema: {
-        tags: ["conversations"],
+        tags: ["social-direct-messages"],
         summary: "List messages (newest first)",
         description: `${note} Pass refresh=true to pull the latest page from the provider first.`,
         security,
@@ -68,10 +74,10 @@ export function registerConversationRoutes(app: FastifyInstance, ctx: ServiceCon
   );
 
   r.post(
-    "/v1/conversations/:id/messages",
+    `${base}/conversations/:id/messages`,
     {
       schema: {
-        tags: ["conversations"],
+        tags: ["social-direct-messages"],
         summary: "Reply in a conversation",
         description: `${note} Instagram only allows replies to conversations the contact started, within Meta's messaging window.`,
         security,

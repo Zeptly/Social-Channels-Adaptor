@@ -1,5 +1,6 @@
-import { claimJobs, dispatch, enqueueJob, enqueuePeriodic, runJob } from "@zeptly-social/core";
-import { jobs } from "@zeptly-social/database";
+import { claimJobs, enqueueJob, enqueuePeriodic, runJob } from "@zeptly-gateway/gateway-core";
+import { dispatch } from "@zeptly-gateway/social-publishing";
+import { jobs } from "@zeptly-gateway/database";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHarness, type Harness, idem } from "../../api/test/helpers.js";
@@ -18,7 +19,7 @@ describe("PostgreSQL job queue", () => {
     const id = await enqueueJob(h.ctx.db, "reconcile_publication", {}, { runAt: h.clock.now(), maxAttempts: 2 }); // missing payload → handler throws
     for (let i = 0; i < 3; i++) {
       const claimed = await claimJobs(h.ctx.db, "w1", 10, h.clock.now());
-      for (const j of claimed) await runJob(h.ctx, j, "w1");
+      for (const j of claimed) await runJob(h.ctx, h.runtime.jobs, j, "w1");
       h.clock.advance(10 * 60_000);
     }
     const [row] = await h.ctx.db.select().from(jobs).where(eq(jobs.id, id as string));
@@ -56,11 +57,11 @@ describe("PostgreSQL job queue", () => {
   });
 
   it("the worker tick writes a heartbeat and runs periodic work", async () => {
-    const w = new Worker(h.ctx, { concurrency: 4, pollIntervalMs: 10, workerId: "hb" });
+    const w = new Worker(h.runtime, { concurrency: 4, pollIntervalMs: 10, workerId: "hb" });
     await w.tick();
     const hb = await h.db.pool.query("select worker_id from worker_heartbeats");
     expect(hb.rows).toEqual([{ worker_id: "hb" }]);
-    const types = (await h.db.pool.query("select distinct type from jobs")).rows.map((r) => r.type).sort();
+    const types = (await h.db.pool.query("select distinct type from jobs")).rows.map((r: { type: string }) => r.type).sort();
     expect(types).toEqual(["housekeeping", "ingest_metrics", "reconcile_connections", "reconcile_publications", "sync_conversations"]);
   });
 });

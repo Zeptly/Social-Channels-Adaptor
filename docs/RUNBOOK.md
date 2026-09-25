@@ -18,7 +18,7 @@ Use the signed-request CLI: `ZS_BASE_URL=… ZEPTLY_SERVICE_SECRET=… pnpm zs <
 
 - **Retry a dead job.** `pnpm zs POST /v1/admin/jobs/<id>/retry --no-workspace`
 - **Reconcile after an incident or provider outage.** `pnpm zs POST /v1/admin/reconcile --no-workspace` enqueues publication and connection reconciliation for all workspaces.
-- **Reconcile one post.** `ZS_WORKSPACE=<ws> pnpm zs POST /v1/posts/<id>/reconcile`
+- **Reconcile one post.** `ZS_WORKSPACE=<ws> pnpm zs POST /v1/social/publishing/posts/<id>/reconcile`
 - **Reconcile one workspace's connections.** `ZS_WORKSPACE=<ws> pnpm zs POST /v1/connections/reconcile`
 
 ## Diagnosis queries
@@ -38,8 +38,12 @@ from social_publications p join social_post_targets t on t.publication_id = p.id
 where t.error_code = 'PUBLICATION_STATE_UNKNOWN';
 
 -- connections needing reauthorization
-select workspace_id, network, status, status_reason from social_connections where status <> 'connected';
+select workspace_id, network, status, status_reason from gateway_connections where status <> 'connected';
 ```
+
+## Scheduled clean-ups
+
+- **Next release after the gateway refactor:** remove the `social_connections` compatibility view (`DROP VIEW IF EXISTS social_connections;` as a new migration) once no previous-release process can be running. Also remove the deprecated HTTP aliases in the next major release ([API.md](API.md#breaking-changes-gateway-refactor)), after confirming from request logs that Zeptly no longer calls the legacy paths (`/v1/posts`, `/v1/media`, `/v1/networks`, `/v1/metrics`, `/v1/conversations`).
 
 ## Incident playbooks
 
@@ -61,37 +65,37 @@ export ZS_BASE_URL=https://<api-domain> ZEPTLY_SERVICE_SECRET=<secret> ZS_WORKSP
 OUTSTAND_LIVE_TESTS=true OUTSTAND_LIVE_API_KEY=<key> pnpm test:live
 
 # 1. Initiate a connection → open authorizationUrl in a browser, authorize the test account
-pnpm zs POST /v1/connections '{"network":"linkedin","returnUrl":"https://<allowed-origin>/social/return"}'
+pnpm zs POST /v1/connections '{"channel":"linkedin","returnUrl":"https://<allowed-origin>/social/return"}'
 #    Browser returns to …?provisioningId=<pid>&status=completed|awaiting_selection
 pnpm zs GET /v1/provisioning/<pid>                                   # if awaiting_selection: list options
 pnpm zs POST /v1/provisioning/<pid>/finalize '{"optionIds":["<id>"]}'
-#    (Bluesky alternative: '{"network":"bluesky","credentials":{"handle":"…","appPassword":"…"}}')
+#    (Bluesky alternative: '{"channel":"bluesky","credentials":{"handle":"…","appPassword":"…"}}')
 
 # 2. Canonical SocialConnection
 pnpm zs GET /v1/connections
 
 # 3. Create + publish a SocialPost (idempotent)
-pnpm zs POST /v1/posts '{"content":{"text":"Zeptly Social PAYG validation"},"targets":[{"connectionId":"<cid>"}]}' --idem
-pnpm zs POST /v1/posts/<post>/publish --idem
+pnpm zs POST /v1/social/publishing/posts '{"content":{"text":"Outstand Gateway PAYG validation"},"targets":[{"connectionId":"<cid>"}]}' --idem
+pnpm zs POST /v1/social/publishing/posts/<post>/publish --idem
 
 # 4–6. Webhook received → reconciled → canonical status published
 pnpm zs GET /v1/admin/webhook-events --no-workspace                  # post.published processed
-pnpm zs GET /v1/posts/<post>                                         # status published, platformPostUrl set
+pnpm zs GET /v1/social/publishing/posts/<post>                                         # status published, platformPostUrl set
 
 # 7. Metrics (may be empty until the network reports them)
-pnpm zs POST /v1/posts/<post>/metrics/refresh
+pnpm zs POST /v1/social/analytics/posts/<post>/refresh
 
 # 8. Scheduling: schedule 40 days ahead → stays local; confirm with publications = pending
-pnpm zs POST /v1/posts '{"content":{"text":"Scheduled validation"},"targets":[{"connectionId":"<cid>"}]}' --idem
-pnpm zs POST /v1/posts/<post2>/schedule '{"scheduledAt":"<now+40d ISO>","timezone":"Europe/London"}' --idem
-pnpm zs GET /v1/posts/<post2>/publications                           # status pending (not handed off)
-pnpm zs POST /v1/posts/<post2>/schedule '{"scheduledAt":"<now+2d ISO>"}' --idem
-pnpm zs GET /v1/posts/<post2>/publications                           # new publication accepted (handed off)
-pnpm zs POST /v1/posts/<post2>/cancel --idem                         # deletes the Outstand scheduled post
+pnpm zs POST /v1/social/publishing/posts '{"content":{"text":"Scheduled validation"},"targets":[{"connectionId":"<cid>"}]}' --idem
+pnpm zs POST /v1/social/publishing/posts/<post2>/schedule '{"scheduledAt":"<now+40d ISO>","timezone":"Europe/London"}' --idem
+pnpm zs GET /v1/social/publishing/posts/<post2>/publications                           # status pending (not handed off)
+pnpm zs POST /v1/social/publishing/posts/<post2>/schedule '{"scheduledAt":"<now+2d ISO>"}' --idem
+pnpm zs GET /v1/social/publishing/posts/<post2>/publications                           # new publication accepted (handed off)
+pnpm zs POST /v1/social/publishing/posts/<post2>/cancel --idem                         # deletes the Outstand scheduled post
 
 # 9. Conversations (Instagram professional account only): message the account from another IG user, then
-pnpm zs GET "/v1/conversations?connectionId=<ig-cid>"
-pnpm zs POST /v1/conversations/<conv>/messages '{"text":"Thanks for reaching out!"}' --idem
+pnpm zs GET "/v1/social/direct-messages/conversations?connectionId=<ig-cid>"
+pnpm zs POST /v1/social/direct-messages/conversations/<conv>/messages '{"text":"Thanks for reaching out!"}' --idem
 ```
 
 Then enable in-place editing: run the live suite with `OUTSTAND_LIVE_ALLOW_PUBLISH=true` and a dedicated test account. If the `PATCH /posts/{id}` test passes, set `OUTSTAND_POST_UPDATE_ENABLED=true` on both services. Otherwise leave it off; edits then use delete + recreate.

@@ -1,15 +1,16 @@
-import { assertIdempotencyKey, metrics, posts, reconcile, type ServiceContext, withIdempotency } from "@zeptly-social/core";
+import { PaginationQuerySchema, page } from "@zeptly-gateway/gateway-contract";
+import { assertIdempotencyKey, withIdempotency } from "@zeptly-gateway/gateway-core";
 import {
   CreatePostRequestSchema,
-  PaginationQuerySchema,
   PostStatusSchema,
+  posts,
+  reconcile,
   SchedulePostRequestSchema,
-  SocialMetricSchema,
+  type SocialPublishingContext,
   SocialPostSchema,
   SocialPublicationSchema,
   UpdatePostRequestSchema,
-  page,
-} from "@zeptly-social/domain";
+} from "@zeptly-gateway/social-publishing";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { actorOf, errorResponses, idempotencyHeader } from "../app.js";
@@ -17,16 +18,20 @@ import { IdParams, idempotentHeaders, security, workspaceHeaders, zapp } from ".
 
 const PostPage = page(SocialPostSchema, "SocialPostPage");
 const PublicationList = z.object({ data: z.array(SocialPublicationSchema) }).meta({ id: "SocialPublicationList" });
-const MetricList = z.object({ data: z.array(SocialMetricSchema) }).meta({ id: "SocialMetricList" });
 
-export function registerPostRoutes(app: FastifyInstance, ctx: ServiceContext): void {
+/** Social Publishing Contract v1 posts (canonical under /v1/social/publishing; /v1/posts is a deprecated alias). */
+export function registerPostRoutes(app: FastifyInstance, ctx: SocialPublishingContext): void {
+  for (const base of ["/v1/social/publishing", "/v1"]) registerAt(app, ctx, base);
+}
+
+function registerAt(app: FastifyInstance, ctx: SocialPublishingContext, base: string): void {
   const r = zapp(app);
 
   r.post(
-    "/v1/posts",
+    `${base}/posts`,
     {
       schema: {
-        tags: ["posts"],
+        tags: ["social-publishing"],
         summary: "Create a post (draft) with its targets",
         description: "Validates every target against the workspace's connections and the network constraints. Idempotent on Idempotency-Key.",
         security,
@@ -44,10 +49,10 @@ export function registerPostRoutes(app: FastifyInstance, ctx: ServiceContext): v
   );
 
   r.get(
-    "/v1/posts",
+    `${base}/posts`,
     {
       schema: {
-        tags: ["posts"],
+        tags: ["social-publishing"],
         summary: "List posts",
         security,
         headers: workspaceHeaders,
@@ -59,16 +64,16 @@ export function registerPostRoutes(app: FastifyInstance, ctx: ServiceContext): v
   );
 
   r.get(
-    "/v1/posts/:id",
-    { schema: { tags: ["posts"], summary: "Get a post with per-target status", security, headers: workspaceHeaders, params: IdParams, response: { 200: SocialPostSchema, ...errorResponses } } },
+    `${base}/posts/:id`,
+    { schema: { tags: ["social-publishing"], summary: "Get a post with per-target status", security, headers: workspaceHeaders, params: IdParams, response: { 200: SocialPostSchema, ...errorResponses } } },
     async (req) => posts.getPost(ctx, actorOf(req), req.params.id),
   );
 
   r.patch(
-    "/v1/posts/:id",
+    `${base}/posts/:id`,
     {
       schema: {
-        tags: ["posts"],
+        tags: ["social-publishing"],
         summary: "Edit a draft or scheduled post (same post id)",
         description:
           "Replaces base content and/or the target list (variants, options). Scheduled posts are re-planned: provider copies already handed off are updated in place when supported (OUTSTAND_POST_UPDATE_ENABLED), otherwise replaced. Rejected once any target is publishing or published.",
@@ -103,7 +108,7 @@ export function registerPostRoutes(app: FastifyInstance, ctx: ServiceContext): v
       path,
       {
         schema: {
-          tags: ["posts"],
+          tags: ["social-publishing"],
           summary,
           description,
           security,
@@ -126,14 +131,14 @@ export function registerPostRoutes(app: FastifyInstance, ctx: ServiceContext): v
     );
 
   command(
-    "/v1/posts/:id/publish",
+    `${base}/posts/:id/publish`,
     "post.publish",
     "Publish now",
-    "Queues immediate publication and attempts hand-off synchronously. Poll GET /v1/posts/{id} for per-target outcomes. Re-publishing an already queued/published post is a no-op.",
+    "Queues immediate publication and attempts hand-off synchronously. Poll GET /v1/social/publishing/posts/{id} for per-target outcomes. Re-publishing an already queued/published post is a no-op.",
     (actor, id) => posts.publishPost(ctx, actor, id),
   );
   command(
-    "/v1/posts/:id/schedule",
+    `${base}/posts/:id/schedule`,
     "post.schedule",
     "Schedule or reschedule",
     "Stores the canonical schedule (any horizon). The post is handed to the provider automatically once it enters the provider's scheduling window (Outstand: OUTSTAND_SCHEDULING_HORIZON_DAYS).",
@@ -141,7 +146,7 @@ export function registerPostRoutes(app: FastifyInstance, ctx: ServiceContext): v
     SchedulePostRequestSchema,
   );
   command(
-    "/v1/posts/:id/cancel",
+    `${base}/posts/:id/cancel`,
     "post.cancel",
     "Cancel unpublished targets",
     "Cancels queued/scheduled publications, deleting provider-side scheduled copies where the network supports delete.",
@@ -149,18 +154,18 @@ export function registerPostRoutes(app: FastifyInstance, ctx: ServiceContext): v
   );
 
   r.get(
-    "/v1/posts/:id/publications",
+    `${base}/posts/:id/publications`,
     {
-      schema: { tags: ["posts"], summary: "Provider submissions for this post", security, headers: workspaceHeaders, params: IdParams, response: { 200: PublicationList, ...errorResponses } },
+      schema: { tags: ["social-publishing"], summary: "Provider submissions for this post", security, headers: workspaceHeaders, params: IdParams, response: { 200: PublicationList, ...errorResponses } },
     },
     async (req) => ({ data: await posts.listPublications(ctx, actorOf(req), req.params.id) }),
   );
 
   r.post(
-    "/v1/posts/:id/reconcile",
+    `${base}/posts/:id/reconcile`,
     {
       schema: {
-        tags: ["posts"],
+        tags: ["social-publishing"],
         summary: "Reconcile this post with the provider now",
         security,
         headers: workspaceHeaders,
@@ -174,13 +179,5 @@ export function registerPostRoutes(app: FastifyInstance, ctx: ServiceContext): v
       for (const p of pubs) await reconcile.reconcilePublication(ctx, p.id);
       return posts.getPost(ctx, actor, req.params.id);
     },
-  );
-
-  r.post(
-    "/v1/posts/:id/metrics/refresh",
-    {
-      schema: { tags: ["metrics"], summary: "Fetch fresh metrics for a published post", security, headers: workspaceHeaders, params: IdParams, response: { 200: MetricList, ...errorResponses } },
-    },
-    async (req) => ({ data: await metrics.refreshPostMetrics(ctx, actorOf(req), req.params.id) }),
   );
 }

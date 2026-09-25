@@ -1,5 +1,7 @@
-import { createServiceContext, loadConfig, type ServiceContext } from "@zeptly-social/core";
-import type { DatabaseHandle } from "@zeptly-social/database";
+import type { DatabaseHandle } from "@zeptly-gateway/database";
+import { HmacServiceAuthenticator, signRequest } from "@zeptly-gateway/gateway-core";
+import { OutstandClient } from "@zeptly-gateway/outstand-client";
+import { createOutstandGateway, loadConfig, type OutstandCapabilityId, type OutstandGatewayContext, type OutstandGatewayRuntime } from "@zeptly-gateway/outstand-gateway";
 import {
   FakeOutstand,
   openTestDatabase,
@@ -11,17 +13,16 @@ import {
   TEST_WEBHOOK_SECRET,
   TestClock,
   testEnv,
-} from "@zeptly-social/test-utils";
-import { OutstandProvider } from "@zeptly-social/provider-outstand";
+} from "@zeptly-gateway/test-utils";
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { buildApp } from "../src/app.js";
-import { HmacServiceAuthenticator, signRequest } from "../src/auth.js";
 import { Worker } from "../../worker/src/runtime.js";
 
 export interface Harness {
   app: FastifyInstance;
-  ctx: ServiceContext;
+  ctx: OutstandGatewayContext;
+  runtime: OutstandGatewayRuntime;
   fake: FakeOutstand;
   db: DatabaseHandle;
   clock: TestClock;
@@ -41,7 +42,7 @@ export interface Harness {
 
 let shared: DatabaseHandle | undefined;
 
-export async function createHarness(opts: { inlineDispatch?: boolean; now?: Date; postUpdate?: boolean } = {}): Promise<Harness> {
+export async function createHarness(opts: { inlineDispatch?: boolean; now?: Date; postUpdate?: boolean; capabilities?: readonly OutstandCapabilityId[] } = {}): Promise<Harness> {
   shared ??= await openTestDatabase();
   const db = shared;
   await resetDatabase(db);
@@ -50,7 +51,7 @@ export async function createHarness(opts: { inlineDispatch?: boolean; now?: Date
   fake.now = clock.now;
   const logger = silentLogger();
   const config = loadConfig(testEnv());
-  const provider = new OutstandProvider({
+  const client = new OutstandClient({
     apiKey: TEST_OUTSTAND_KEY,
     webhookSecret: TEST_WEBHOOK_SECRET,
     baseUrl: config.OUTSTAND_API_BASE_URL,
@@ -61,9 +62,19 @@ export async function createHarness(opts: { inlineDispatch?: boolean; now?: Date
     maxAttempts: 3,
     logger,
   });
-  const ctx = createServiceContext({ config, db: db.db, logger, providers: [provider], inlineDispatch: opts.inlineDispatch ?? true, now: clock.now, skipMediaDnsCheck: true });
+  const runtime = createOutstandGateway({
+    config,
+    db: db.db,
+    logger,
+    client,
+    inlineDispatch: opts.inlineDispatch ?? true,
+    now: clock.now,
+    skipMediaDnsCheck: true,
+    ...(opts.capabilities ? { capabilities: opts.capabilities } : {}),
+  });
+  const ctx = runtime.ctx;
   const app = await buildApp({
-    ctx,
+    runtime,
     authenticator: new HmacServiceAuthenticator(TEST_SERVICE_SECRET, undefined, () => clock.now().getTime()),
     logger: false,
     readiness: { check: async () => ({ database: { ok: true } }) },
@@ -121,7 +132,7 @@ export async function createHarness(opts: { inlineDispatch?: boolean; now?: Date
     return { status: res.statusCode, json: res.json() };
   };
 
-  const worker = new Worker(ctx, { concurrency: 8, pollIntervalMs: 10, workerId: "test-worker" });
+  const worker = new Worker(runtime, { concurrency: 8, pollIntervalMs: 10, workerId: "test-worker" });
   const drain: Harness["drain"] = async (maxTicks = 20) => {
     let total = 0;
     for (let i = 0; i < maxTicks; i++) {
@@ -132,7 +143,7 @@ export async function createHarness(opts: { inlineDispatch?: boolean; now?: Date
     return total;
   };
 
-  return { app, ctx, fake, db, clock, call, connect, webhook, drain, close: () => app.close() };
+  return { app, ctx, runtime, fake, db, clock, call, connect, webhook, drain, close: () => app.close() };
 }
 
 export const idem = () => randomUUID();

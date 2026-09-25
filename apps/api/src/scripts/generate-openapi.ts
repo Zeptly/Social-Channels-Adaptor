@@ -1,11 +1,11 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createServiceContext, loadConfig } from "@zeptly-social/core";
-import { createDatabase } from "@zeptly-social/database";
-import { createLogger } from "@zeptly-social/observability";
+import { createDatabase } from "@zeptly-gateway/database";
+import { HmacServiceAuthenticator } from "@zeptly-gateway/gateway-core";
+import { createLogger } from "@zeptly-gateway/observability";
+import { createOutstandGateway, loadConfig } from "@zeptly-gateway/outstand-gateway";
 import { buildApp } from "../app.js";
-import { HmacServiceAuthenticator } from "../auth.js";
 
 /**
  * Writes the committed OpenAPI artifact (openapi/openapi.json). With --check it
@@ -26,7 +26,7 @@ const config = loadConfig({
 const logger = createLogger({ service: "openapi", level: "silent" });
 const database = createDatabase(config.DATABASE_URL, { max: 1 });
 const app = await buildApp({
-  ctx: createServiceContext({ config, db: database.db, logger }),
+  runtime: createOutstandGateway({ config, db: database.db, logger }),
   authenticator: new HmacServiceAuthenticator(config.ZEPTLY_SERVICE_SECRET),
   logger: false,
   readiness: { check: async () => ({}) },

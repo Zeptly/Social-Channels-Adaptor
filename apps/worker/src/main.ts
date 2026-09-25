@@ -1,6 +1,6 @@
-import { ConfigError, createServiceContext, loadConfig } from "@zeptly-social/core";
-import { appliedMigrationCount, createDatabase } from "@zeptly-social/database";
-import { createLogger } from "@zeptly-social/observability";
+import { appliedMigrationCount, createDatabase } from "@zeptly-gateway/database";
+import { createLogger } from "@zeptly-gateway/observability";
+import { ConfigError, createOutstandGateway, loadConfig } from "@zeptly-gateway/outstand-gateway";
 import { Worker } from "./runtime.js";
 
 async function main(): Promise<void> {
@@ -11,8 +11,8 @@ async function main(): Promise<void> {
     process.stderr.write(`${err instanceof ConfigError ? err.message : String(err)}\n`);
     process.exit(1);
   }
-  const logger = createLogger({ service: "zeptly-social-worker", level: config.LOG_LEVEL });
-  const database = createDatabase(config.DATABASE_URL, { applicationName: "zeptly-social-worker", max: config.WORKER_CONCURRENCY + 2 });
+  const logger = createLogger({ service: "outstand-gateway-worker", level: config.LOG_LEVEL });
+  const database = createDatabase(config.DATABASE_URL, { applicationName: "outstand-gateway-worker", max: config.WORKER_CONCURRENCY + 2 });
 
   // Wait for migrations (the pre-deploy step) before touching tables.
   for (let i = 0; ; i++) {
@@ -27,8 +27,8 @@ async function main(): Promise<void> {
   }
 
   // The worker never dispatches from request context; inline dispatch is an API concern.
-  const ctx = createServiceContext({ config, db: database.db, logger, inlineDispatch: false });
-  const worker = new Worker(ctx, { concurrency: config.WORKER_CONCURRENCY, pollIntervalMs: config.WORKER_POLL_INTERVAL_MS, version: process.env.RAILWAY_GIT_COMMIT_SHA });
+  const runtime = createOutstandGateway({ config, db: database.db, logger, inlineDispatch: false });
+  const worker = new Worker(runtime, { concurrency: config.WORKER_CONCURRENCY, pollIntervalMs: config.WORKER_POLL_INTERVAL_MS, version: process.env.RAILWAY_GIT_COMMIT_SHA });
   worker.start();
 
   const shutdown = async (signal: string) => {

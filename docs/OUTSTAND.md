@@ -1,6 +1,10 @@
-# Outstand adapter (V1)
+# Outstand (provider of this gateway)
 
-Code lives in `packages/provider-outstand` (`http.ts` transport, `wire.ts` mapping, `webhooks.ts`, `provider.ts`). Wire fixtures are in `packages/provider-outstand/test/fixtures/2026-09/`.
+Outstand code lives in three places:
+
+- `packages/outstand-client`: `http.ts` transport, private `wire.ts` mapping, `webhooks.ts`, `client.ts` (`OutstandClient`), and typed results in `types.ts`. Wire fixtures are in `packages/outstand-client/test/fixtures/2026-09/`.
+- `packages/adapters/*/src/outstand`: typed capability adapters that implement each capability port on the client. `social-publishing/src/outstand/networks.ts` holds the verified network catalog.
+- `packages/outstand-gateway`: channel catalog (connection strategies), account port, webhook source (Outstand event → gateway event kind) and composition.
 
 ## Evidence and verification status
 
@@ -58,11 +62,11 @@ Items marked **(to confirm live)** below have not been exercised against the rea
 
 LinkedIn, Instagram, Facebook, Threads, TikTok, Pinterest, YouTube and Bluesky. X/Twitter, Reddit, Google Business Profile and Vimeo need BYOK. They are not representable in the public contract: the Zod enum rejects them.
 
-The capability registry (`packages/capability-registry/src/outstand-v1.ts`, version `2026.09.23-1`) records per network the connection strategy, capabilities and constraints: text limit, required media, allowed mime types and sizes, item counts, and verified option keys.
+The verified network catalog (`packages/adapters/social-publishing/src/outstand/networks.ts`, `OUTSTAND_SOCIAL_CATALOG_VERSION` `2026.09.24-1`) records per network the features and constraints: text limit, required media, allowed mime types and sizes, item counts, and verified option keys. Connection strategies moved to the gateway channel catalog (`packages/outstand-gateway/src/channels.ts`), because provisioning is gateway infrastructure. The gateway refactor left the catalog content unchanged apart from that move.
 
 ## Provider limitations
 
-- **Scheduling horizon.** Outstand rejects `scheduledAt` more than 30 days ahead with a 400, and no post is created. This service keeps the canonical schedule and hands off only inside `OUTSTAND_SCHEDULING_HORIZON_DAYS − OUTSTAND_HANDOFF_MARGIN_MINUTES`. The adapter also refuses out-of-horizon schedules before any request is sent.
+- **Scheduling horizon.** Outstand rejects `scheduledAt` more than 30 days ahead with a 400, and no post is created. This service keeps the canonical schedule and hands off only inside `OUTSTAND_SCHEDULING_HORIZON_DAYS − OUTSTAND_HANDOFF_MARGIN_MINUTES`. The Outstand client also refuses out-of-horizon schedules before any request is sent.
 - **Editing handed-off posts.** Outstand now offers "Update a post" (`PATCH /posts/{id}`), but its request body is not published anywhere reachable from the build environment.
   - With `OUTSTAND_POST_UPDATE_ENABLED=true`, edits and reschedules that stay inside the horizon and keep the same target set are applied in place.
   - In every other case the Outstand copy is deleted and a new publication is created with a new key: when the flag is off, when an update fails, when a post moves beyond the horizon, or when the target set changes.
@@ -115,7 +119,7 @@ Every other network returns `422 CAPABILITY_NOT_SUPPORTED` from the conversation
 | Spec assumption | Verified behaviour | Handling |
 | --- | --- | --- |
 | Bluesky uses app password rather than OAuth | Both exist: Outstand's hosted flow collects the app password, and a direct `POST /social-accounts/bluesky` is documented | Both strategies modelled (`provider_managed` default, `credentials`) |
-| Create-post targets documented as `socialAccountIds` in places | The live API requires `accounts` | Adapter sends `accounts` only |
+| Create-post targets documented as `socialAccountIds` in places | The live API requires `accounts` | Client sends `accounts` only |
 | `GET /posts/{id}` response shape | Not in the official UI package; envelopes vary | Tolerant decoding; to confirm live |
 | Webhook payload keys | `accountId` (not `id`); numeric ids for token expiry | Implemented per verified contract |
 | Webhook `post.published` as success | Means *at least one* account succeeded | Never treated as full success; authoritative GET always follows |
@@ -126,7 +130,7 @@ Outstand's September 2026 roundup was reviewed against the V1 scope. The docs si
 
 | Announcement | Decision | Status | Evidence / notes |
 | --- | --- | --- | --- |
-| Edit unpublished posts, keeping the same post reference | **Implemented.** Canonical `PATCH /v1/posts/{id}` edits draft and scheduled posts (copy, media, variants, options, target set). Reschedules and edits of handed-off posts use Outstand's update in place when enabled; otherwise delete + recreate | Adapter flag off by default; enable after `pnpm test:live` (the write-gated PATCH test) passes | Docs navigation "Update a post PATCH"; MCP tool `update_post` "Update a draft or scheduled post before it publishes". Body shape assumed to mirror create without `accounts` |
+| Edit unpublished posts, keeping the same post reference | **Implemented.** Canonical `PATCH /v1/social/publishing/posts/{id}` edits draft and scheduled posts (copy, media, variants, options, target set). Reschedules and edits of handed-off posts use Outstand's update in place when enabled; otherwise delete + recreate | Client flag (`OUTSTAND_POST_UPDATE_ENABLED`) off by default; enable after `pnpm test:live` (the write-gated PATCH test) passes | Docs navigation "Update a post PATCH"; MCP tool `update_post` "Update a draft or scheduled post before it publishes". Body shape assumed to mirror create without `accounts` |
 | Facebook Stories and Reels | **Implemented.** `facebook.publishAsReel` / `publishAsStory` target options, validated: mutually exclusive, a Reel is exactly one video, a Story is exactly one image or video with no caption | Available | Outstand Facebook configuration docs: "Set publishAsReel: true…", "Set publishAsStory: true…", "sending both … is a 400", "a Reel is exactly one video" |
 | Instagram AI-content disclosure | **Implemented.** `instagram.isAiGenerated` (Meta `is_ai_generated`, shown as an "AI info" label) | Available | Outstand Instagram configuration docs |
 | Fuller insights (Facebook, Reels views, Story metrics) | **Implemented.** The analytics mapper passes through every numeric metric Outstand reports, under its reported name. Semantics stay network-scoped | Available | No new endpoint; same `GET /posts/{id}/analytics` |

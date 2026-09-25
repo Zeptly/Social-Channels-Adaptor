@@ -1,5 +1,5 @@
 {
-  "name": "@zeptly-social/worker",
+  "name": "@zeptly-gateway/worker",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -9,15 +9,17 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
-    "@zeptly-social/core": "workspace:*",
-    "@zeptly-social/database": "workspace:*",
-    "@zeptly-social/domain": "workspace:*",
-    "@zeptly-social/observability": "workspace:*",
+    "@zeptly-gateway/database": "workspace:*",
+    "@zeptly-gateway/gateway-contract": "workspace:*",
+    "@zeptly-gateway/gateway-core": "workspace:*",
+    "@zeptly-gateway/observability": "workspace:*",
+    "@zeptly-gateway/outstand-gateway": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "pg": "^8.23.0",
     "pino": "^10.3.1"
   },
   "devDependencies": {
-    "@zeptly-social/test-utils": "workspace:*"
+    "@zeptly-gateway/test-utils": "workspace:*",
+    "@zeptly-gateway/social-publishing": "workspace:*"
   }
 }

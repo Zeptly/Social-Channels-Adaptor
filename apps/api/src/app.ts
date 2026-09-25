@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import fastifySwagger from "@fastify/swagger";
-import { type Actor, ensureWorkspace, type ServiceContext } from "@zeptly-social/core";
-import { ApiErrorBodySchema, isSocialError, SocialError } from "@zeptly-social/domain";
-import { LOG_REDACT_PATHS, type Logger } from "@zeptly-social/observability";
+import { ApiErrorBodySchema, isGatewayError, GatewayError } from "@zeptly-gateway/gateway-contract";
+import { type Actor, type AuthenticatedCaller, ensureWorkspace, type ServiceAuthenticator } from "@zeptly-gateway/gateway-core";
+import type { OutstandGatewayRuntime } from "@zeptly-gateway/outstand-gateway";
+import { LOG_REDACT_PATHS, type Logger } from "@zeptly-gateway/observability";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyRequest } from "fastify";
 import {
   hasZodFastifySchemaValidationErrors,
@@ -11,13 +12,15 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from "fastify-type-provider-zod";
-import type { AuthenticatedCaller, ServiceAuthenticator } from "./auth.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerConversationRoutes } from "./routes/conversations.js";
+import { registerGatewayRoutes } from "./routes/gateway.js";
 import { registerHealthRoutes, type ReadinessProbe } from "./routes/health.js";
+import { canonicalFor } from "./routes/legacy.js";
 import { registerMediaRoutes } from "./routes/media.js";
 import { registerMetricRoutes } from "./routes/metrics.js";
+import { registerNetworkRoutes } from "./routes/networks.js";
 import { registerPostRoutes } from "./routes/posts.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 
@@ -31,11 +34,13 @@ declare module "fastify" {
   }
   interface FastifyContextConfig {
     auth?: AuthMode;
+    /** Set on deprecated alias routes: the canonical successor path. */
+    successor?: string;
   }
 }
 
 export interface BuildAppOptions {
-  ctx: ServiceContext;
+  runtime: OutstandGatewayRuntime;
   authenticator: ServiceAuthenticator;
   readiness: ReadinessProbe;
   logger?: Logger | false;
@@ -68,7 +73,22 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     try {
       done(null, JSON.parse(body.toString("utf8")));
     } catch {
-      done(new SocialError("VALIDATION_ERROR", "Request body is not valid JSON"), undefined);
+      done(new GatewayError("VALIDATION_ERROR", "Request body is not valid JSON"), undefined);
+    }
+  });
+
+  // Deprecated pre-gateway aliases: flag in OpenAPI and point at the successor.
+  app.addHook("onRoute", (route) => {
+    const successor = canonicalFor(route.url);
+    if (!successor) return;
+    route.config = { ...(route.config ?? {}), successor };
+    if (route.schema) {
+      route.schema = {
+        ...route.schema,
+        tags: ["legacy"],
+        deprecated: true,
+        description: `Deprecated alias of \`${successor}\` (same behaviour); will be removed in the next major release.${route.schema.description ? `\n\n${route.schema.description}` : ""}`,
+      };
     }
   });
 
@@ -76,10 +96,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     openapi: {
       openapi: "3.1.0",
       info: {
-        title: "Zeptly Social API",
+        title: "Outstand Gateway API",
         version: opts.version ?? API_VERSION,
         description:
-          "Provider-neutral social infrastructure gateway for Zeptly. All objects are canonical Zeptly Social objects; provider identifiers never appear. Authenticated with ZS1-HMAC-SHA256 service signatures (see docs/SECURITY.md).",
+          "Zeptly's gateway to Outstand. Implements Gateway Contract v1 (/v1/gateway, /v1/capabilities, /v1/connections) and the capability contracts Outstand backs: Social Publishing v1 (/v1/social/publishing), Social Scheduling v1, Social Analytics (basic) v1 (/v1/social/analytics) and Social Direct Messages v1 (/v1/social/direct-messages). Provider identifiers never appear in responses. Authenticated with ZS1-HMAC-SHA256 service signatures (see docs/SECURITY.md).",
       },
       components: {
         securitySchemes: {
@@ -93,15 +113,15 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
         },
       },
       tags: [
-        { name: "networks" },
-        { name: "connections" },
-        { name: "media" },
-        { name: "posts" },
-        { name: "metrics" },
-        { name: "conversations" },
+        { name: "gateway", description: "Gateway Contract v1: identity, capability discovery, health" },
+        { name: "connections", description: "Gateway Contract v1: provider-account provisioning and connection lifecycle" },
+        { name: "social-publishing", description: "Social Publishing Contract v1 (+ Social Scheduling v1)" },
+        { name: "social-analytics", description: "Social Analytics Contract v1 (social.analytics.basic)" },
+        { name: "social-direct-messages", description: "Social Direct Messages Contract v1" },
         { name: "webhooks" },
         { name: "admin" },
         { name: "health" },
+        { name: "legacy", description: "Deprecated pre-gateway aliases (removed in the next major release)" },
       ],
     },
     transform: jsonSchemaTransform,
@@ -111,6 +131,11 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   app.addHook("onSend", async (req, reply) => {
     reply.header("x-request-id", req.id);
     reply.header("cache-control", "no-store");
+    const successor = req.routeOptions.config?.successor;
+    if (successor) {
+      reply.header("deprecation", "true");
+      reply.header("link", `<${successor}>; rel="successor-version"`);
+    }
   });
 
   app.addHook("preValidation", async (req) => {
@@ -119,15 +144,15 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     const caller = opts.authenticator.authenticate({ method: req.method, url: req.url, headers: req.headers, rawBody: req.rawBody });
     req.caller = caller;
     if (mode === "workspace") {
-      if (!caller.workspaceExternalId) throw new SocialError("WORKSPACE_FORBIDDEN", "X-Zeptly-Workspace-Id is required");
-      const workspace = await ensureWorkspace(opts.ctx.db, caller.workspaceExternalId);
+      if (!caller.workspaceExternalId) throw new GatewayError("WORKSPACE_FORBIDDEN", "X-Zeptly-Workspace-Id is required");
+      const workspace = await ensureWorkspace(opts.runtime.ctx.db, caller.workspaceExternalId);
       req.actor = { workspace, service: caller.service, ...(caller.agent ? { agent: caller.agent } : {}), requestId: req.id };
       req.log = req.log.child({ workspaceId: caller.workspaceExternalId, caller: caller.service });
     }
   });
 
   app.setErrorHandler((err, req, reply) => {
-    if (isSocialError(err)) {
+    if (isGatewayError(err)) {
       if (err.status >= 500) req.log.error({ err, code: err.code }, "request failed");
       else req.log.info({ code: err.code }, "request rejected");
       if (err.code === "PROVIDER_RATE_LIMITED" && typeof err.details?.retryAfterSeconds === "number") reply.header("retry-after", String(err.details.retryAfterSeconds));
@@ -135,29 +160,35 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     }
     if (hasZodFastifySchemaValidationErrors(err)) {
       const issues = err.validation.map((v) => ({ path: v.instancePath, message: v.message ?? "invalid" }));
-      return reply.status(400).send(new SocialError("VALIDATION_ERROR", "Request validation failed", { details: { issues } }).toJSON(req.id));
+      return reply.status(400).send(new GatewayError("VALIDATION_ERROR", "Request validation failed", { details: { issues } }).toJSON(req.id));
     }
     const e = err as { statusCode?: number; code?: string; message?: string };
-    if (e.statusCode === 413) return reply.status(413).send(new SocialError("VALIDATION_ERROR", "Request body too large", { status: 413 }).toJSON(req.id));
+    if (e.statusCode === 413) return reply.status(413).send(new GatewayError("VALIDATION_ERROR", "Request body too large", { status: 413 }).toJSON(req.id));
     if (e.statusCode && e.statusCode >= 400 && e.statusCode < 500) {
-      return reply.status(e.statusCode).send(new SocialError("VALIDATION_ERROR", "Invalid request", { status: e.statusCode, details: { reason: e.code } }).toJSON(req.id));
+      return reply.status(e.statusCode).send(new GatewayError("VALIDATION_ERROR", "Invalid request", { status: e.statusCode, details: { reason: e.code } }).toJSON(req.id));
     }
     req.log.error({ err }, "unhandled error");
-    return reply.status(500).send(new SocialError("INTERNAL_ERROR", "Unexpected internal error").toJSON(req.id));
+    return reply.status(500).send(new GatewayError("INTERNAL_ERROR", "Unexpected internal error").toJSON(req.id));
   });
 
   app.setNotFoundHandler((req, reply) => {
-    reply.status(404).send(new SocialError("NOT_FOUND", "Route not found").toJSON(req.id));
+    reply.status(404).send(new GatewayError("NOT_FOUND", "Route not found").toJSON(req.id));
   });
 
+  const rt = opts.runtime;
   registerHealthRoutes(app, opts.readiness);
-  registerConnectionRoutes(app, opts.ctx);
-  registerMediaRoutes(app, opts.ctx);
-  registerPostRoutes(app, opts.ctx);
-  registerMetricRoutes(app, opts.ctx);
-  registerConversationRoutes(app, opts.ctx);
-  registerWebhookRoutes(app, opts.ctx);
-  registerAdminRoutes(app, opts.ctx);
+  registerGatewayRoutes(app, rt);
+  registerConnectionRoutes(app, rt);
+  // Capability surfaces exist only for capabilities composed into this gateway.
+  if (rt.registry.get("social.publishing")) {
+    registerNetworkRoutes(app, rt);
+    registerMediaRoutes(app, rt.ctx);
+    registerPostRoutes(app, rt.ctx);
+  }
+  if (rt.registry.get("social.analytics.basic")) registerMetricRoutes(app, rt.ctx);
+  if (rt.registry.get("social.direct_messages")) registerConversationRoutes(app, rt.ctx);
+  registerWebhookRoutes(app, rt.ctx);
+  registerAdminRoutes(app, rt);
 
   app.get("/openapi.json", { config: { auth: "public" }, schema: { hide: true } }, async () => app.swagger());
 
@@ -177,7 +208,7 @@ export const errorResponses = {
 } as const;
 
 export function actorOf(req: FastifyRequest): Actor {
-  if (!req.actor) throw new SocialError("AUTHENTICATION_FAILED", "Unauthenticated");
+  if (!req.actor) throw new GatewayError("AUTHENTICATION_FAILED", "Unauthenticated");
   return req.actor;
 }
 

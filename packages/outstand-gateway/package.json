@@ -1,0 +1,21 @@
+{
+  "name": "@zeptly-gateway/outstand-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zeptly-gateway/gateway-contract": "workspace:*",
+    "@zeptly-gateway/gateway-core": "workspace:*",
+    "@zeptly-gateway/database": "workspace:*",
+    "@zeptly-gateway/observability": "workspace:*",
+    "@zeptly-gateway/outstand-client": "workspace:*",
+    "drizzle-orm": "^0.45.3",
+    "zod": "^4.1.5",
+    "@zeptly-gateway/social-publishing": "workspace:*",
+    "@zeptly-gateway/social-analytics": "workspace:*",
+    "@zeptly-gateway/social-direct-messages": "workspace:*"
+  }
+}

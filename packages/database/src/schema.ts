@@ -17,7 +17,7 @@ import {
  * Tenant model: every tenant-owned row carries `workspace_id` (FK to
  * workspaces.id). Composite foreign keys are not used; instead every query in
  * the core services filters on workspace_id and every child lookup is
- * re-validated against the parent's workspace (see packages/core/src/tenancy.ts).
+ * re-validated against the parent's workspace (see packages/gateway-core/src/tenancy.ts).
  */
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
@@ -63,8 +63,13 @@ export const provisioningSessions = pgTable(
   (t) => [index("provisioning_sessions_workspace_idx").on(t.workspaceId, t.createdAt)],
 );
 
-export const socialConnections = pgTable(
-  "social_connections",
+/**
+ * Gateway connection: Zeptly workspace → connection → provider account.
+ * Renamed from `social_connections` (migration 0001); a compatibility view with
+ * the old name is kept for one release so a rolling deploy cannot break.
+ */
+export const gatewayConnections = pgTable(
+  "gateway_connections",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
@@ -82,7 +87,7 @@ export const socialConnections = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("social_connections_workspace_idx").on(t.workspaceId, t.status)],
+  (t) => [index("gateway_connections_workspace_idx").on(t.workspaceId, t.status)],
 );
 
 /**
@@ -95,7 +100,7 @@ export const providerAccounts = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
-    connectionId: uuid("connection_id").notNull().unique().references(() => socialConnections.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id").notNull().unique().references(() => gatewayConnections.id, { onDelete: "cascade" }),
     provider: text("provider").notNull(),
     externalId: text("external_id").notNull(),
     network: text("network").notNull(),
@@ -194,7 +199,7 @@ export const socialPostTargets = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     postId: uuid("post_id").notNull().references(() => socialPosts.id, { onDelete: "cascade" }),
-    connectionId: uuid("connection_id").notNull().references(() => socialConnections.id),
+    connectionId: uuid("connection_id").notNull().references(() => gatewayConnections.id),
     publicationId: uuid("publication_id").references(() => socialPublications.id, { onDelete: "set null" }),
     network: text("network").notNull(),
     content: jsonb("content").$type<{ text?: string; mediaIds?: string[] }>(),
@@ -236,7 +241,7 @@ export const socialConversations = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
-    connectionId: uuid("connection_id").notNull().references(() => socialConnections.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id").notNull().references(() => gatewayConnections.id, { onDelete: "cascade" }),
     provider: text("provider").notNull(),
     externalId: text("external_id").notNull(),
     network: text("network").notNull(),
@@ -284,7 +289,7 @@ export const socialMetrics = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
-    connectionId: uuid("connection_id").references(() => socialConnections.id, { onDelete: "set null" }),
+    connectionId: uuid("connection_id").references(() => gatewayConnections.id, { onDelete: "set null" }),
     postId: uuid("post_id").references(() => socialPosts.id, { onDelete: "cascade" }),
     targetId: uuid("target_id").references(() => socialPostTargets.id, { onDelete: "cascade" }),
     network: text("network").notNull(),
@@ -411,7 +416,7 @@ export const workerHeartbeats = pgTable("worker_heartbeats", {
 
 export type Workspace = typeof workspaces.$inferSelect;
 export type ProvisioningSessionRow = typeof provisioningSessions.$inferSelect;
-export type SocialConnectionRow = typeof socialConnections.$inferSelect;
+export type GatewayConnectionRow = typeof gatewayConnections.$inferSelect;
 export type ProviderAccountRow = typeof providerAccounts.$inferSelect;
 export type SocialMediaRow = typeof socialMedia.$inferSelect;
 export type SocialPostRow = typeof socialPosts.$inferSelect;

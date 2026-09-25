@@ -1,17 +1,16 @@
 import { hostname } from "node:os";
-import { claimJobs, dispatch, enqueuePeriodic, type JobType, runJob, type ServiceContext } from "@zeptly-social/core";
-import { workerHeartbeats } from "@zeptly-social/database";
+import { claimJobs, enqueuePeriodic, type GatewayContext, type JobHandler, type PeriodicJob, runJob, type WorkerTick } from "@zeptly-gateway/gateway-core";
+import { workerHeartbeats } from "@zeptly-gateway/database";
 
-/** Periodic work, enqueued as deduplicated jobs so any number of replicas is safe. */
-export const PERIODIC: Array<{ type: JobType; everyMs: number }> = [
-  { type: "reconcile_publications", everyMs: 5 * 60_000 },
-  { type: "reconcile_connections", everyMs: 60 * 60_000 },
-  { type: "ingest_metrics", everyMs: 60 * 60_000 },
-  { type: "sync_conversations", everyMs: 10 * 60_000 },
-  { type: "housekeeping", everyMs: 60 * 60_000 },
-];
-
-export const HANDOFF_EVERY_MS = 60_000;
+/** What the worker runs: supplied by the gateway composition (gateway jobs + capability modules). */
+export interface WorkerPlan<C extends GatewayContext> {
+  ctx: C;
+  jobs: Record<string, JobHandler<C>>;
+  /** Enqueued as deduplicated jobs so any number of replicas is safe. */
+  periodic: PeriodicJob[];
+  /** Fixed-cadence work outside the queue (e.g. the Social Publishing schedule hand-off). */
+  ticks: WorkerTick<C>[];
+}
 
 export interface WorkerOptions {
   concurrency: number;
@@ -23,20 +22,22 @@ export interface WorkerOptions {
 /**
  * Worker loop:
  *  - every tick: claim + run due jobs (webhook processing, reconciliation, media, metrics, ...);
- *  - every minute: rolling schedule hand-off (claim publications entering the provider horizon);
+ *  - capability ticks on their cadence (e.g. rolling schedule hand-off every minute);
  *  - periodic jobs enqueued with dedupe; heartbeat row for observability.
  * Stops cleanly on SIGTERM: finishes in-flight work, claims nothing new.
  */
-export class Worker {
+export class Worker<C extends GatewayContext> {
   readonly workerId: string;
   private stopping = false;
-  private lastHandoff = 0;
+  private readonly lastRun = new Map<string, number>();
   private loop: Promise<void> | undefined;
+  private readonly ctx: C;
 
   constructor(
-    private readonly ctx: ServiceContext,
+    private readonly plan: WorkerPlan<C>,
     private readonly opts: WorkerOptions,
   ) {
+    this.ctx = plan.ctx;
     this.workerId = opts.workerId ?? `${hostname()}:${process.pid}`;
   }
 
@@ -49,24 +50,26 @@ export class Worker {
     await this.loop;
   }
 
-  /** One full iteration; exposed for tests. */
+  /** One full iteration; exposed for tests. `handedOff` counts work done by capability ticks. */
   async tick(): Promise<{ jobs: number; handedOff: number }> {
     const now = this.ctx.now();
     await this.ctx.db
       .insert(workerHeartbeats)
       .values({ workerId: this.workerId, startedAt: now, lastBeatAt: now, version: this.opts.version ?? null })
       .onConflictDoUpdate({ target: workerHeartbeats.workerId, set: { lastBeatAt: now } });
-    for (const p of PERIODIC) await enqueuePeriodic(this.ctx.db, p.type, p.everyMs, now);
+    for (const p of this.plan.periodic) await enqueuePeriodic(this.ctx.db, p.type, p.everyMs, now);
 
     let handedOff = 0;
-    if (now.getTime() - this.lastHandoff >= HANDOFF_EVERY_MS || this.lastHandoff === 0) {
-      this.lastHandoff = now.getTime();
-      const outcomes = await dispatch.runHandoff(this.ctx, this.workerId, { limit: 50 });
-      handedOff = outcomes.length;
+    for (const t of this.plan.ticks) {
+      const last = this.lastRun.get(t.name);
+      if (last === undefined || now.getTime() - last >= t.everyMs) {
+        this.lastRun.set(t.name, now.getTime());
+        handedOff += await t.run(this.ctx, this.workerId);
+      }
     }
 
     const claimed = await claimJobs(this.ctx.db, this.workerId, this.opts.concurrency, now);
-    await Promise.all(claimed.map((j) => runJob(this.ctx, j, this.workerId)));
+    await Promise.all(claimed.map((j) => runJob(this.ctx, this.plan.jobs, j, this.workerId)));
     return { jobs: claimed.length, handedOff };
   }
 

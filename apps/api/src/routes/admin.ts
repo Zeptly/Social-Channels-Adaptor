@@ -1,6 +1,7 @@
-import { enqueueJob, listJobs, retryDeadJob, type ServiceContext } from "@zeptly-social/core";
-import { SocialError } from "@zeptly-social/domain";
-import { webhookEvents } from "@zeptly-social/database";
+import { GatewayError } from "@zeptly-gateway/gateway-contract";
+import { enqueueJob, listJobs, retryDeadJob } from "@zeptly-gateway/gateway-core";
+import type { OutstandGatewayRuntime } from "@zeptly-gateway/outstand-gateway";
+import { webhookEvents } from "@zeptly-gateway/database";
 import { desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -29,8 +30,9 @@ const WebhookEvent = z
  * Operational endpoints (service-authenticated, no workspace). They expose
  * queue/webhook diagnostics only — no tenant content.
  */
-export function registerAdminRoutes(app: FastifyInstance, ctx: ServiceContext): void {
+export function registerAdminRoutes(app: FastifyInstance, rt: OutstandGatewayRuntime): void {
   const r = zapp(app);
+  const ctx = rt.ctx;
   r.get(
     "/v1/admin/jobs",
     {
@@ -67,7 +69,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ServiceContext): 
     { config: { auth: "service" }, schema: { tags: ["admin"], summary: "Requeue a dead job", security, headers: serviceHeaders, params: IdParams, response: { 200: z.object({ requeued: z.boolean() }), ...errorResponses } } },
     async (req) => {
       const ok = await retryDeadJob(ctx.db, req.params.id).catch(() => false);
-      if (!ok) throw new SocialError("NOT_FOUND", "No dead job with this id");
+      if (!ok) throw new GatewayError("NOT_FOUND", "No dead job with this id");
       return { requeued: true };
     },
   );
@@ -116,7 +118,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ServiceContext): 
     },
     async (_req, reply) => {
       const enqueued: string[] = [];
-      for (const type of ["reconcile_publications", "reconcile_connections"] as const) {
+      for (const type of ["reconcile_publications", "reconcile_connections"].filter((t) => rt.jobs[t])) {
         const id = await enqueueJob(ctx.db, type, {}, { dedupeKey: `admin:${type}`, runAt: ctx.now() });
         if (id) enqueued.push(type);
       }

@@ -12,7 +12,7 @@
  * perform a real immediate publish to the dedicated test account.
  */
 import { randomUUID } from "node:crypto";
-import { OutstandProvider } from "@zeptly-social/provider-outstand";
+import { OutstandClient } from "@zeptly-gateway/outstand-client";
 import { describe, expect, it } from "vitest";
 
 const enabled = process.env.OUTSTAND_LIVE_TESTS === "true" && Boolean(process.env.OUTSTAND_LIVE_API_KEY);
@@ -20,7 +20,7 @@ const allowWrite = process.env.OUTSTAND_LIVE_ALLOW_PUBLISH === "true" && Boolean
 const suite = enabled ? describe : describe.skip;
 
 suite("LIVE Outstand (opt-in)", () => {
-  const provider = new OutstandProvider({
+  const provider = new OutstandClient({
     apiKey: process.env.OUTSTAND_LIVE_API_KEY ?? "unset",
     webhookSecret: process.env.OUTSTAND_WEBHOOK_SECRET ?? "live-suite-unused-secret",
     baseUrl: process.env.OUTSTAND_API_BASE_URL ?? "https://api.outstand.so/v1",
@@ -71,7 +71,7 @@ suite("LIVE Outstand (opt-in)", () => {
 
   (allowWrite ? it : it.skip)("[WRITES to dedicated test account] PATCH /posts/{id} edits copy + time in place (gate for OUTSTAND_POST_UPDATE_ENABLED)", async () => {
     const account = process.env.OUTSTAND_LIVE_TEST_ACCOUNT_ID as string;
-    const editable = new OutstandProvider({
+    const editable = new OutstandClient({
       apiKey: process.env.OUTSTAND_LIVE_API_KEY ?? "unset",
       webhookSecret: "live-suite-unused-secret",
       baseUrl: process.env.OUTSTAND_API_BASE_URL ?? "https://api.outstand.so/v1",

@@ -13,7 +13,7 @@ import { createDatabase } from "./client.js";
 import {
   auditEvents,
   providerAccounts,
-  socialConnections,
+  gatewayConnections,
   socialMetrics,
   socialPosts,
   socialPostTargets,
@@ -45,7 +45,7 @@ await db.transaction(async (tx) => {
   if (!ws) throw new Error("workspace insert failed");
   const mk = async (network: string, username: string, status = "connected") => {
     const [c] = await tx
-      .insert(socialConnections)
+      .insert(gatewayConnections)
       .values({ workspaceId: ws.id, network, provider: "outstand", status, displayName: username, username, accountType: "organization", connectedAt: hoursAgo(72), lastCheckedAt: hoursAgo(1) })
       .returning();
     if (!c) throw new Error("connection insert failed");

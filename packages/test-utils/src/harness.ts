@@ -1,5 +1,5 @@
-import { createLogger, type Logger } from "@zeptly-social/observability";
-import { createDatabase, type DatabaseHandle, runMigrations } from "@zeptly-social/database";
+import { createLogger, type Logger } from "@zeptly-gateway/observability";
+import { createDatabase, type DatabaseHandle, runMigrations } from "@zeptly-gateway/database";
 import { FAKE_BASE, FakeOutstand } from "./fake-outstand.js";
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/zeptly_social_test";
@@ -30,7 +30,7 @@ let migrated: Promise<void> | undefined;
 export async function openTestDatabase(): Promise<DatabaseHandle> {
   migrated ??= runMigrations({ url: TEST_DATABASE_URL, log: () => undefined });
   await migrated;
-  return createDatabase(TEST_DATABASE_URL, { max: 5, applicationName: "zeptly-social-test" });
+  return createDatabase(TEST_DATABASE_URL, { max: 5, applicationName: "outstand-gateway-test" });
 }
 
 export async function resetDatabase(handle: DatabaseHandle): Promise<void> {

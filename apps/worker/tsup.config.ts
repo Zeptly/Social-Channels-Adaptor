@@ -11,5 +11,5 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   splitting: false,
-  noExternal: [/^@zeptly-social\//],
+  noExternal: [/^@zeptly-gateway\//],
 });

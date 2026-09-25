@@ -14,13 +14,15 @@ FROM base AS manifests
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/worker/package.json apps/worker/
-COPY packages/capability-registry/package.json packages/capability-registry/
-COPY packages/core/package.json packages/core/
+COPY packages/gateway-contract/package.json packages/gateway-contract/
+COPY packages/gateway-core/package.json packages/gateway-core/
+COPY packages/outstand-client/package.json packages/outstand-client/
+COPY packages/outstand-gateway/package.json packages/outstand-gateway/
+COPY packages/adapters/social-publishing/package.json packages/adapters/social-publishing/
+COPY packages/adapters/social-analytics/package.json packages/adapters/social-analytics/
+COPY packages/adapters/social-direct-messages/package.json packages/adapters/social-direct-messages/
 COPY packages/database/package.json packages/database/
-COPY packages/domain/package.json packages/domain/
 COPY packages/observability/package.json packages/observability/
-COPY packages/provider-contract/package.json packages/provider-contract/
-COPY packages/provider-outstand/package.json packages/provider-outstand/
 COPY packages/test-utils/package.json packages/test-utils/
 
 FROM manifests AS build

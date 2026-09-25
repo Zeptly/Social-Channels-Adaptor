@@ -3,5 +3,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["apps/*/src/**/*.ts", "apps/*/test/**/*.ts", "packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "packages/*/*.config.ts", "scripts/**/*.ts", "vitest.config.ts"]
+  "include": ["packages/adapters/*/src/**/*.ts", "packages/adapters/*/test/**/*.ts", "test/**/*.ts", "apps/*/src/**/*.ts", "apps/*/test/**/*.ts", "packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "packages/*/*.config.ts", "scripts/**/*.ts", "vitest.config.ts"]
 }

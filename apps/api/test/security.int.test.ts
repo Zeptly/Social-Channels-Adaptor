@@ -1,6 +1,6 @@
-import { TEST_OUTSTAND_KEY, TEST_SERVICE_SECRET, TEST_WEBHOOK_SECRET } from "@zeptly-social/test-utils";
+import { TEST_OUTSTAND_KEY, TEST_SERVICE_SECRET, TEST_WEBHOOK_SECRET } from "@zeptly-gateway/test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { signRequest } from "../src/auth.js";
+import { signRequest } from "@zeptly-gateway/gateway-core";
 import { createHarness, type Harness, idem } from "./helpers.js";
 
 const A = "ws_tenant_a";

@@ -6,7 +6,7 @@ export default defineConfig({
       {
         test: {
           name: "unit",
-          include: ["packages/*/test/**/*.test.ts", "apps/*/test/**/*.unit.test.ts"],
+          include: ["packages/*/test/**/*.test.ts", "packages/adapters/*/test/**/*.test.ts", "apps/*/test/**/*.unit.test.ts", "test/**/*.test.ts"],
           exclude: ["**/*.int.test.ts", "**/*.live.test.ts", "**/node_modules/**"],
           environment: "node",
         },
@@ -14,7 +14,7 @@ export default defineConfig({
       {
         test: {
           name: "integration",
-          include: ["apps/*/test/**/*.int.test.ts", "packages/*/test/**/*.int.test.ts"],
+          include: ["apps/*/test/**/*.int.test.ts", "packages/*/test/**/*.int.test.ts", "packages/adapters/*/test/**/*.int.test.ts"],
           environment: "node",
           // One PostgreSQL test database shared by all files: run files serially.
           fileParallelism: false,

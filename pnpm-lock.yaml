@@ -47,27 +47,30 @@ importers:
       '@fastify/swagger':
         specifier: ^9.9.0
         version: 9.9.0
-      '@zeptly-social/capability-registry':
-        specifier: workspace:*
-        version: link:../../packages/capability-registry
-      '@zeptly-social/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@zeptly-social/database':
+      '@zeptly-gateway/database':
         specifier: workspace:*
         version: link:../../packages/database
-      '@zeptly-social/domain':
+      '@zeptly-gateway/gateway-contract':
         specifier: workspace:*
-        version: link:../../packages/domain
-      '@zeptly-social/observability':
+        version: link:../../packages/gateway-contract
+      '@zeptly-gateway/gateway-core':
+        specifier: workspace:*
+        version: link:../../packages/gateway-core
+      '@zeptly-gateway/observability':
         specifier: workspace:*
         version: link:../../packages/observability
-      '@zeptly-social/provider-contract':
+      '@zeptly-gateway/outstand-gateway':
         specifier: workspace:*
-        version: link:../../packages/provider-contract
-      '@zeptly-social/provider-outstand':
+        version: link:../../packages/outstand-gateway
+      '@zeptly-gateway/social-analytics':
         specifier: workspace:*
-        version: link:../../packages/provider-outstand
+        version: link:../../packages/adapters/social-analytics
+      '@zeptly-gateway/social-direct-messages':
+        specifier: workspace:*
+        version: link:../../packages/adapters/social-direct-messages
+      '@zeptly-gateway/social-publishing':
+        specifier: workspace:*
+        version: link:../../packages/adapters/social-publishing
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
@@ -90,24 +93,30 @@ importers:
         specifier: ^4.1.5
         version: 4.6.5
     devDependencies:
-      '@zeptly-social/test-utils':
+      '@zeptly-gateway/outstand-client':
+        specifier: workspace:*
+        version: link:../../packages/outstand-client
+      '@zeptly-gateway/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
 
   apps/worker:
     dependencies:
-      '@zeptly-social/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@zeptly-social/database':
+      '@zeptly-gateway/database':
         specifier: workspace:*
         version: link:../../packages/database
-      '@zeptly-social/domain':
+      '@zeptly-gateway/gateway-contract':
         specifier: workspace:*
-        version: link:../../packages/domain
-      '@zeptly-social/observability':
+        version: link:../../packages/gateway-contract
+      '@zeptly-gateway/gateway-core':
+        specifier: workspace:*
+        version: link:../../packages/gateway-core
+      '@zeptly-gateway/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@zeptly-gateway/outstand-gateway':
+        specifier: workspace:*
+        version: link:../../packages/outstand-gateway
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
@@ -118,36 +127,33 @@ importers:
         specifier: ^10.3.1
         version: 10.3.1
     devDependencies:
-      '@zeptly-social/test-utils':
+      '@zeptly-gateway/social-publishing':
+        specifier: workspace:*
+        version: link:../../packages/adapters/social-publishing
+      '@zeptly-gateway/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
 
-  packages/capability-registry:
+  packages/adapters/social-analytics:
     dependencies:
-      '@zeptly-social/domain':
+      '@zeptly-gateway/database':
         specifier: workspace:*
-        version: link:../domain
-
-  packages/core:
-    dependencies:
-      '@zeptly-social/capability-registry':
+        version: link:../../database
+      '@zeptly-gateway/gateway-contract':
         specifier: workspace:*
-        version: link:../capability-registry
-      '@zeptly-social/database':
+        version: link:../../gateway-contract
+      '@zeptly-gateway/gateway-core':
         specifier: workspace:*
-        version: link:../database
-      '@zeptly-social/domain':
+        version: link:../../gateway-core
+      '@zeptly-gateway/observability':
         specifier: workspace:*
-        version: link:../domain
-      '@zeptly-social/observability':
+        version: link:../../observability
+      '@zeptly-gateway/outstand-client':
         specifier: workspace:*
-        version: link:../observability
-      '@zeptly-social/provider-contract':
+        version: link:../../outstand-client
+      '@zeptly-gateway/social-publishing':
         specifier: workspace:*
-        version: link:../provider-contract
-      '@zeptly-social/provider-outstand':
-        specifier: workspace:*
-        version: link:../provider-outstand
+        version: link:../social-publishing
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
@@ -155,12 +161,64 @@ importers:
         specifier: ^4.1.5
         version: 4.6.5
 
+  packages/adapters/social-direct-messages:
+    dependencies:
+      '@zeptly-gateway/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@zeptly-gateway/gateway-contract':
+        specifier: workspace:*
+        version: link:../../gateway-contract
+      '@zeptly-gateway/gateway-core':
+        specifier: workspace:*
+        version: link:../../gateway-core
+      '@zeptly-gateway/observability':
+        specifier: workspace:*
+        version: link:../../observability
+      '@zeptly-gateway/outstand-client':
+        specifier: workspace:*
+        version: link:../../outstand-client
+      '@zeptly-gateway/social-publishing':
+        specifier: workspace:*
+        version: link:../social-publishing
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
+      zod:
+        specifier: ^4.1.5
+        version: 4.6.5
+
+  packages/adapters/social-publishing:
+    dependencies:
+      '@zeptly-gateway/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@zeptly-gateway/gateway-contract':
+        specifier: workspace:*
+        version: link:../../gateway-contract
+      '@zeptly-gateway/gateway-core':
+        specifier: workspace:*
+        version: link:../../gateway-core
+      '@zeptly-gateway/observability':
+        specifier: workspace:*
+        version: link:../../observability
+      '@zeptly-gateway/outstand-client':
+        specifier: workspace:*
+        version: link:../../outstand-client
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
+      zod:
+        specifier: ^4.1.5
+        version: 4.6.5
+    devDependencies:
+      '@zeptly-gateway/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+
   packages/database:
     dependencies:
-      '@zeptly-social/domain':
-        specifier: workspace:*
-        version: link:../domain
-      '@zeptly-social/observability':
+      '@zeptly-gateway/observability':
         specifier: workspace:*
         version: link:../observability
       drizzle-orm:
@@ -170,8 +228,26 @@ importers:
         specifier: ^8.23.0
         version: 8.23.0
 
-  packages/domain:
+  packages/gateway-contract:
     dependencies:
+      zod:
+        specifier: ^4.1.5
+        version: 4.6.5
+
+  packages/gateway-core:
+    dependencies:
+      '@zeptly-gateway/database':
+        specifier: workspace:*
+        version: link:../database
+      '@zeptly-gateway/gateway-contract':
+        specifier: workspace:*
+        version: link:../gateway-contract
+      '@zeptly-gateway/observability':
+        specifier: workspace:*
+        version: link:../observability
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
       zod:
         specifier: ^4.1.5
         version: 4.6.5
@@ -182,41 +258,59 @@ importers:
         specifier: ^10.3.1
         version: 10.3.1
 
-  packages/provider-contract:
+  packages/outstand-client:
     dependencies:
-      '@zeptly-social/domain':
+      '@zeptly-gateway/gateway-contract':
         specifier: workspace:*
-        version: link:../domain
-
-  packages/provider-outstand:
-    dependencies:
-      '@zeptly-social/domain':
-        specifier: workspace:*
-        version: link:../domain
-      '@zeptly-social/observability':
+        version: link:../gateway-contract
+      '@zeptly-gateway/observability':
         specifier: workspace:*
         version: link:../observability
-      '@zeptly-social/provider-contract':
+      zod:
+        specifier: ^4.1.5
+        version: 4.6.5
+
+  packages/outstand-gateway:
+    dependencies:
+      '@zeptly-gateway/database':
         specifier: workspace:*
-        version: link:../provider-contract
+        version: link:../database
+      '@zeptly-gateway/gateway-contract':
+        specifier: workspace:*
+        version: link:../gateway-contract
+      '@zeptly-gateway/gateway-core':
+        specifier: workspace:*
+        version: link:../gateway-core
+      '@zeptly-gateway/observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@zeptly-gateway/outstand-client':
+        specifier: workspace:*
+        version: link:../outstand-client
+      '@zeptly-gateway/social-analytics':
+        specifier: workspace:*
+        version: link:../adapters/social-analytics
+      '@zeptly-gateway/social-direct-messages':
+        specifier: workspace:*
+        version: link:../adapters/social-direct-messages
+      '@zeptly-gateway/social-publishing':
+        specifier: workspace:*
+        version: link:../adapters/social-publishing
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
       zod:
         specifier: ^4.1.5
         version: 4.6.5
 
   packages/test-utils:
     dependencies:
-      '@zeptly-social/database':
+      '@zeptly-gateway/database':
         specifier: workspace:*
         version: link:../database
-      '@zeptly-social/domain':
-        specifier: workspace:*
-        version: link:../domain
-      '@zeptly-social/observability':
+      '@zeptly-gateway/observability':
         specifier: workspace:*
         version: link:../observability
-      '@zeptly-social/provider-contract':
-        specifier: workspace:*
-        version: link:../provider-contract
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)

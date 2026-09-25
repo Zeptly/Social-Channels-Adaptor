@@ -1,0 +1,16 @@
+{
+  "name": "@zeptly-gateway/gateway-core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zeptly-gateway/gateway-contract": "workspace:*",
+    "@zeptly-gateway/database": "workspace:*",
+    "@zeptly-gateway/observability": "workspace:*",
+    "drizzle-orm": "^0.45.3",
+    "zod": "^4.1.5"
+  }
+}

@@ -1,8 +1,8 @@
-import { ConfigError, createServiceContext, loadConfig } from "@zeptly-social/core";
-import { appliedMigrationCount, createDatabase, ping } from "@zeptly-social/database";
-import { createLogger } from "@zeptly-social/observability";
+import { appliedMigrationCount, createDatabase, ping } from "@zeptly-gateway/database";
+import { HmacServiceAuthenticator } from "@zeptly-gateway/gateway-core";
+import { createLogger } from "@zeptly-gateway/observability";
+import { ConfigError, createOutstandGateway, loadConfig } from "@zeptly-gateway/outstand-gateway";
 import { API_VERSION, buildApp } from "./app.js";
-import { HmacServiceAuthenticator } from "./auth.js";
 
 async function main(): Promise<void> {
   let config;
@@ -12,16 +12,10 @@ async function main(): Promise<void> {
     process.stderr.write(`${err instanceof ConfigError ? err.message : String(err)}\n`);
     process.exit(1);
   }
-  const logger = createLogger({ service: "zeptly-social-api", level: config.LOG_LEVEL });
-  const database = createDatabase(config.DATABASE_URL, { applicationName: "zeptly-social-api" });
-  const ctx = createServiceContext({ config, db: database.db, logger });
-  const app = await buildApp({
-    ctx,
-    authenticator: new HmacServiceAuthenticator(config.ZEPTLY_SERVICE_SECRET, config.ZEPTLY_SERVICE_SECRET_PREVIOUS),
-    logger,
-    version: API_VERSION,
-    readiness: {
-      async check() {
+  const logger = createLogger({ service: "outstand-gateway-api", level: config.LOG_LEVEL });
+  const database = createDatabase(config.DATABASE_URL, { applicationName: "outstand-gateway-api" });
+  const readiness = {
+    async check() {
         const checks: Record<string, { ok: boolean; detail?: string }> = {};
         try {
           await ping(database.pool);
@@ -34,8 +28,15 @@ async function main(): Promise<void> {
         // Configuration was validated at startup; provider credentials are not probed here to avoid provider traffic.
         checks.configuration = { ok: true };
         return checks;
-      },
     },
+  };
+  const runtime = createOutstandGateway({ config, db: database.db, logger, version: API_VERSION, healthProbe: () => readiness.check() });
+  const app = await buildApp({
+    runtime,
+    authenticator: new HmacServiceAuthenticator(config.ZEPTLY_SERVICE_SECRET, config.ZEPTLY_SERVICE_SECRET_PREVIOUS),
+    logger,
+    version: API_VERSION,
+    readiness,
   });
 
   const shutdown = async (signal: string) => {
@@ -51,7 +52,7 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
   await app.listen({ port: config.port, host: "0.0.0.0" });
-  logger.info({ port: config.port }, "zeptly-social api listening");
+  logger.info({ port: config.port }, "outstand gateway api listening");
 }
 
 main().catch((err: unknown) => {

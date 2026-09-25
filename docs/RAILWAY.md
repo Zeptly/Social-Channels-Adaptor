@@ -14,7 +14,7 @@ Both app services build the same `Dockerfile` (Node 24, pnpm, bundled workspace 
 
 These steps require a human with Railway access. The build environment could not reach Railway (egress blocked), so nothing has been deployed yet.
 
-1. **Project.** Create a Railway project (or use the target project) named e.g. `zeptly-social`.
+1. **Project.** Create a Railway project (or use the target project) named e.g. `outstand-gateway`.
 2. **PostgreSQL.** Add a PostgreSQL database service (*New → Database → PostgreSQL*).
 3. **API service.**
    - Go to *New → GitHub Repo → `Zeptly/Social-Channels-Adaptor`* and choose the production branch (`main` after merge).
@@ -59,11 +59,19 @@ No secret is committed: `railway.toml` and `railway/worker.toml` contain only bu
 ```bash
 curl -s https://<api-domain>/health          # {"status":"ok"}
 curl -s https://<api-domain>/ready           # database, migrations, configuration all ok
-ZS_BASE_URL=https://<api-domain> ZEPTLY_SERVICE_SECRET=… ZS_WORKSPACE=ws_payg_test pnpm zs GET /v1/networks
+ZS_BASE_URL=https://<api-domain> ZEPTLY_SERVICE_SECRET=… ZS_WORKSPACE=ws_payg_test pnpm zs GET /v1/capabilities
+ZS_BASE_URL=https://<api-domain> ZEPTLY_SERVICE_SECRET=… pnpm zs GET /v1/gateway --no-workspace
 ZS_BASE_URL=https://<api-domain> ZEPTLY_SERVICE_SECRET=… pnpm zs GET /v1/admin/jobs --no-workspace
 ```
 
 Worker health: its logs show `worker started` and periodic `job completed` lines. The `worker_heartbeats` table is updated every tick.
+
+## Upgrading to the gateway refactor
+
+- **No new or renamed environment variables.** The service topology, config files, start commands and health checks are unchanged. Log `service` names changed to `outstand-gateway-api` and `outstand-gateway-worker`, and the PostgreSQL `application_name` changed to `outstand-gateway`.
+- **Migration `0001_gateway_connections`** runs as the pre-deploy step. It is metadata-only: it renames `social_connections` to `gateway_connections` plus its constraints and index, and it copies no data, so it completes instantly. It then creates a `social_connections` compatibility view so a previous-release process still running during the rollover keeps reading and writing (the view is auto-updatable).
+- **Rollback.** Code rollback to the previous release stays safe while the view exists, because the old code addresses `social_connections`. This was verified by running the previous release's full integration suite (58 tests) against a database migrated to 0001: all passed. If a full schema rollback is ever required, run `DROP VIEW social_connections; ALTER TABLE gateway_connections RENAME TO social_connections;` and rename the constraints and index back (see `migrations/0001_gateway_connections.sql`).
+- **Follow-up in the next release:** add a migration that drops the `social_connections` view (RUNBOOK "Scheduled clean-ups").
 
 ## Rollback
 

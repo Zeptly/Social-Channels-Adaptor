@@ -1,48 +1,62 @@
-# zeptly-social
+# Outstand Gateway
 
-**Zeptly Social** is the provider-neutral, headless social infrastructure gateway for Zeptly. It owns social **account provisioning** and **social execution**: publishing, long-range scheduling, media hand-off, signed webhooks, reconciliation, supported metrics and supported conversations. It exposes one stable, canonical API to the main Zeptly application.
+The **Outstand Gateway** is Zeptly's gateway to [Outstand](https://outstand.so). It is one provider gateway: it knows exactly one upstream provider and exposes what that provider can do through versioned, provider-neutral contracts:
 
-V1 is implemented on **Outstand** (Managed-Key networks only). Outstand is an internal adapter. Its objects and identifiers never appear in the public API.
+- **Gateway Contract v1** (gateway identity, capability discovery, health, workspace-scoped connections and provisioning, canonical errors, webhook and audit envelopes). Every Zeptly provider gateway implements this contract. See [docs/GATEWAY-CONTRACT.md](docs/GATEWAY-CONTRACT.md).
+- The **capability contracts** Outstand backs:
+  - `social.publishing` v1 and `social.scheduling` v1: posts, media, targets, publications and long-range schedules;
+  - `social.analytics.basic` v1: provider-reported post metrics;
+  - `social.direct_messages` v1: Instagram DMs only, and deliberately not a universal inbox.
 
-> This repository is `zeptly-social`. It lives in the `Zeptly/Social-Channels-Adaptor` GitHub repository.
+Only Outstand **Managed-Key** networks are served: LinkedIn, Instagram, Facebook, Threads, TikTok, Pinterest, YouTube and Bluesky. Outstand objects and identifiers never appear in the API.
+
+> This repository lives in the `Zeptly/Social-Channels-Adaptor` GitHub repository. It was previously named `zeptly-social`. The upgrade notes are in [docs/API.md](docs/API.md#breaking-changes-gateway-refactor).
 
 ## What it is not
 
-There is no UI of any kind: no Composer, Calendar or Inbox. There is no AI generation, Brand Engine, content recipes, campaign planning, approval policy, autonomous posting or end-user authentication. Zeptly owns all of those. X/Twitter, Reddit, Google Business Profile, Vimeo, BYOK, Zernio and Unipile are also out of scope for V1 (see [docs/PROVIDERS.md](docs/PROVIDERS.md)).
+- It is **not** Zeptly's universal social-provider router. It does not pick between providers: every capability it reports is backed by Outstand. Another provider (for example Zernio) would be a **separate gateway** that implements the same Gateway Contract. Zeptly chooses between gateways.
+- It has no UI of any kind: no Composer, Calendar or Inbox. It has no AI generation, Brand Engine, content recipes, campaign planning, approval policy, autonomous posting or end-user authentication. Zeptly owns all of those.
+- It does not support X/Twitter, Reddit, Google Business Profile, Vimeo, BYOK, SMS or broadcasts.
 
 ## Architecture
 
 ```
-Zeptly ──signed service calls──▶ Social API (Fastify, /v1)
-                                   │  canonical domain (SocialConnection, SocialPost, …)
-                                   ▼
-                               capability router  (capability + network + workspace → provider)
-                                   ▼
-                               provider adapter (OutstandProvider)  ──▶ Outstand ──▶ networks
+Zeptly ──signed ZS1 requests──▶ Outstand Gateway API (/v1)
+                                  │ Gateway Contract v1           /v1/gateway · /v1/capabilities · /v1/connections
+                                  │ Social capability contracts   /v1/social/{publishing,analytics,direct-messages}
+                                  ▼
+                        gateway-core (tenancy, auth, provisioning, idempotency, jobs, webhooks, audit, discovery)
+                                  ▼
+                        capability services + typed Outstand capability adapters
+                                  ▼
+                        outstand-client (transport, auth, wire types, errors, rate limits) ──▶ Outstand ──▶ networks
 PostgreSQL ◀── API + Worker (durable jobs, rolling schedule hand-off, reconciliation, webhooks)
 ```
 
 | Path | Purpose |
 | --- | --- |
-| `apps/api` | Fastify HTTP API, service auth, OpenAPI generation |
-| `apps/worker` | PostgreSQL-backed job runner: hand-off, webhooks, reconciliation, metrics, conversations, housekeeping |
-| `packages/domain` | Canonical models (Zod), error model, status aggregation |
-| `packages/capability-registry` | Version-controlled network/capability registry and capability router |
-| `packages/provider-contract` | `SocialProvider` interface, provider errors, registry |
-| `packages/provider-outstand` | Outstand adapter: transport, wire mapping, webhooks, fixtures |
-| `packages/core` | Application services shared by API and worker (tenancy, provisioning, posts, dispatch, …) |
+| `apps/api` | Fastify HTTP API, route composition, OpenAPI generation |
+| `apps/worker` | PostgreSQL-backed job runner, generic over the gateway's jobs, periodic work and ticks |
+| `packages/gateway-contract` | **Gateway Contract v1**: identity, workspace, provider references, request context, capability descriptors, canonical errors, health, audit and webhook envelopes. Depends only on Zod |
+| `packages/gateway-core` | Gateway infrastructure: service auth, tenant isolation, account ownership, provisioning, idempotency, jobs and retries, webhook ingestion, connection reconciliation, audit, capability registry and discovery. It knows no provider and no capability domain |
+| `packages/outstand-client` | The only code that speaks Outstand HTTP: transport, auth, private wire schemas, typed results, errors, rate limits, webhook verification |
+| `packages/adapters/social-publishing` | Social Publishing and Scheduling Contract v1 (`./contract`), the provider-neutral port, the canonical service, and the Outstand port implementation (`./outstand`) |
+| `packages/adapters/social-analytics` | Social Analytics Contract v1, service and Outstand implementation |
+| `packages/adapters/social-direct-messages` | Social Direct Messages Contract v1 (narrow), service and Outstand implementation |
+| `packages/outstand-gateway` | Composition root: configuration, Outstand channel catalog, account port, webhook source, `createOutstandGateway()` |
 | `packages/database` | Drizzle schema, client, migrator, seed |
 | `packages/observability` | Structured logging and secret redaction |
 | `packages/test-utils` | Stateful fake Outstand (tests and local dev), DB harness |
 | `migrations/` | SQL migrations (drizzle-kit) |
 | `openapi/openapi.json` | Committed OpenAPI 3.1 contract |
-| `docs/` | Architecture, API, providers, Outstand, security, Railway, runbook, Zeptly integration |
+| `test/architecture.test.ts` | Static dependency and isolation rules |
+| `docs/` | Gateway contract, architecture, API, Outstand, security, Railway, runbook, Zeptly integration, refactor report |
 
-The design is detailed in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), which includes Mermaid diagrams.
+The design is detailed in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Local development
 
-Requirements: Node ≥ 22.12 (24 LTS recommended, see `.nvmrc`), pnpm 10, Docker (or a local PostgreSQL 16). No Outstand account is needed.
+Requirements: Node ≥ 22.12 (24 LTS recommended, see `.nvmrc`), pnpm 10, and Docker or a local PostgreSQL 16. No Outstand account is needed.
 
 ```bash
 pnpm install
@@ -58,8 +72,9 @@ pnpm dev                        # terminal 2: API on :8080 + worker
 To call the API, use the signed-request CLI (see [docs/ZEPTLY-INTEGRATION.md](docs/ZEPTLY-INTEGRATION.md)):
 
 ```bash
-ZS_WORKSPACE=ws_local_test pnpm zs GET /v1/networks
-pnpm zs POST /v1/connections '{"network":"facebook","returnUrl":"http://localhost:3000/cb"}'
+pnpm zs GET /v1/gateway --no-workspace
+ZS_WORKSPACE=ws_local_test pnpm zs GET /v1/capabilities
+pnpm zs POST /v1/connections '{"channel":"facebook","returnUrl":"http://localhost:3000/cb"}'
 # open provisioning.authorizationUrl in a browser → mock consent → redirected back
 ```
 
@@ -67,7 +82,7 @@ pnpm zs POST /v1/connections '{"network":"facebook","returnUrl":"http://localhos
 
 ```bash
 pnpm lint && pnpm typecheck
-pnpm test:unit              # domain, routing, Outstand contract fixtures, webhooks, transport, auth, redaction
+pnpm test:unit              # contracts, catalog, Outstand client fixtures, webhooks, transport, auth, redaction, architecture rules
 pnpm test:integration       # needs PostgreSQL (TEST_DATABASE_URL, default …/zeptly_social_test)
 pnpm test:live              # OPT-IN real Outstand suite (OUTSTAND_LIVE_TESTS=true + key); never in CI
 pnpm db:check && pnpm db:drift   # migration consistency / schema drift
@@ -75,21 +90,20 @@ pnpm openapi:check          # committed OpenAPI is current
 pnpm build
 ```
 
-Integration tests drive the real Fastify app, the real Outstand adapter and a real PostgreSQL database. Only Outstand's HTTP API is faked, by a stateful, wire-accurate fake. Coverage includes the connection lifecycle, multi-account and partial publishing, idempotency (timeouts after upstream acceptance, retries, duplicate requests and webhooks), rolling hand-off, token expiry, reconciliation, media, metrics, conversations and cross-tenant security.
+Integration tests drive the real Fastify app, the real Outstand client and a real PostgreSQL database. Only Outstand's HTTP API is faked, by a stateful, wire-accurate fake. Two architecture tests guard the refactor's goals:
+
+- **A**: the gateway stays coherent with no capability modules. Discovery, provisioning, account-expiry webhooks and jobs keep working.
+- **B**: the Social Publishing service runs unchanged against a non-Outstand, in-memory port.
 
 ## Railway deployment
 
-There is one Docker image and three Railway services: **API**, **Worker** and **PostgreSQL**. `railway.toml` configures the API and `railway/worker.toml` configures the worker. Exact steps and variables are in [docs/RAILWAY.md](docs/RAILWAY.md).
-
-## Provider model
-
-Every capability is resolved through the capability router, keyed by capability, network and workspace. Provider identifiers live only in integration tables (`provider_accounts`, `social_publications.provider_post_id`, …). Adding Zernio or Unipile means adding an adapter and a capability table. The public API does not change. See [docs/PROVIDERS.md](docs/PROVIDERS.md) and [docs/OUTSTAND.md](docs/OUTSTAND.md).
+There is one Docker image and three Railway services: **API**, **Worker** and **PostgreSQL**. `railway.toml` configures the API and `railway/worker.toml` configures the worker. See [docs/RAILWAY.md](docs/RAILWAY.md).
 
 ## Security boundary
 
-- The Outstand API key and webhook secret exist only in this service's environment.
+- The Outstand API key and webhook secret exist only in this gateway's environment.
 - Zeptly authenticates with signed service requests (ZS1-HMAC-SHA256, rotation supported).
-- Every tenant-owned row carries `workspace_id`. Every lookup is workspace-constrained, and provider ids are never trusted without a stored mapping.
+- Ownership runs workspace → gateway connection → Outstand provider account. Every lookup is workspace-constrained, and a provider id never establishes access without a stored mapping.
 - Webhooks are verified by HMAC over the raw bytes and deduplicated. Secrets are redacted from logs, stored payloads and errors.
 
 See [docs/SECURITY.md](docs/SECURITY.md).

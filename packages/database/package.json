@@ -1,5 +1,5 @@
 {
-  "name": "@zeptly-social/database",
+  "name": "@zeptly-gateway/database",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -8,8 +8,7 @@
     "./migrate": "./src/migrate.ts"
   },
   "dependencies": {
-    "@zeptly-social/domain": "workspace:*",
-    "@zeptly-social/observability": "workspace:*",
+    "@zeptly-gateway/observability": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "pg": "^8.23.0"
   }
