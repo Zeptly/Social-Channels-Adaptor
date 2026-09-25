@@ -2,29 +2,27 @@
 
 ## Topology
 
-| Service | Source | Config file | Start | Pre-deploy | Health check | Restart |
+Deployed project: **`outstand-gateway`** (Railway workspace "My Projects", region `ams`, environment `production`).
+
+| Service | Source | Start | Pre-deploy | Health check | Restart | Public |
 | --- | --- | --- | --- | --- | --- | --- |
-| **PostgreSQL** | Railway Postgres plugin | — | — | — | — | — |
-| **API** | this repo (Dockerfile) | `railway.toml` (or `railway/api.toml`) | `node apps/api/dist/main.js` | `node apps/api/dist/migrate.js` | `GET /ready` (120 s) | ON_FAILURE ×10 |
-| **Worker** | this repo (Dockerfile) | `railway/worker.toml` | `node apps/worker/dist/main.js` | `node apps/worker/dist/migrate.js` | — (no HTTP) | ALWAYS |
+| **Postgres** | Railway PostgreSQL template (`postgres-ssl:18`, volume `postgres-volume`) | — | — | — | — | no (private network only) |
+| **API** | GitHub `Zeptly/Social-Channels-Adaptor`, `Dockerfile` | `node apps/api/dist/main.js` | `node apps/api/dist/migrate.js` | `GET /ready` (120 s) | ON_FAILURE ×10 | `https://api-production-97c0.up.railway.app` |
+| **Worker** | GitHub `Zeptly/Social-Channels-Adaptor`, `Dockerfile` | `node apps/worker/dist/main.js` | `node apps/worker/dist/migrate.js` | — (no HTTP) | ALWAYS | no |
 
-Both app services build the same `Dockerfile` (Node 24, pnpm, bundled workspace packages, production dependencies only). Migrations are idempotent and serialized with a PostgreSQL advisory lock, so both pre-deploy steps can run safely. The worker also waits for migrations on boot. Each service deploys independently: `watchPatterns` are scoped, so a worker-only change does not redeploy the API.
+Both app services build the same `Dockerfile` (Node 24, pnpm, bundled workspace packages, production dependencies only). Migrations are idempotent and serialized with a PostgreSQL advisory lock, so both pre-deploy steps can run safely. The worker also waits for migrations on boot. Each service has scoped watch patterns (`apps/<service>/**`, `packages/**`, `migrations/**`, `package.json`, `pnpm-lock.yaml`, `Dockerfile`), so a worker-only change does not redeploy the API.
 
-## Exact setup steps
+**Service settings live on the Railway services**, not in the repository. Railway deprecated Config as Code (`railway.toml`), and new services cannot opt into it, so the former `railway.toml` / `railway/*.toml` files were removed in Phase 2. That also removes the risk of the worker picking up the API's root config. The table above is the authoritative record of those settings.
 
-These steps require a human with Railway access. The build environment could not reach Railway (egress blocked), so nothing has been deployed yet.
+## Setup steps (as performed in Phase 2)
 
-1. **Project.** Create a Railway project (or use the target project) named e.g. `outstand-gateway`.
-2. **PostgreSQL.** Add a PostgreSQL database service (*New → Database → PostgreSQL*).
-3. **API service.**
-   - Go to *New → GitHub Repo → `Zeptly/Social-Channels-Adaptor`* and choose the production branch (`main` after merge).
-   - *Settings → Config-as-code*: path `railway.toml` (the default).
-   - *Settings → Networking*: *Generate Domain*, or attach a custom domain such as `social.zeptly.com`.
-   - Turn on *Wait for CI* (deploy only after GitHub checks pass).
-4. **Worker service.** Add the same repo a second time. Set *Config-as-code* to `railway/worker.toml` and do not generate a domain.
-5. **Variables.** Set the variables below. Use Railway references for shared values: on the worker, set `DATABASE_URL=${{Postgres.DATABASE_URL}}` and reference the API's secrets, e.g. `OUTSTAND_API_KEY=${{API.OUTSTAND_API_KEY}}`.
-6. **Deploy.** Deploy the API, then the worker. Check that `https://<api-domain>/ready` returns `{"status":"ready"}`.
-7. **Outstand webhook.** In the Outstand dashboard, add the webhook endpoint `https://<api-domain>/v1/webhooks/outstand` with a signing secret, and set that secret as `OUTSTAND_WEBHOOK_SECRET` on both services. Use the dashboard's *Test* action: `GET /v1/admin/webhook-events` should then show a `processed` test event.
+1. **Project.** Create the `outstand-gateway` project.
+2. **PostgreSQL.** Add the PostgreSQL template.
+3. **API service.** Create an empty service `API` and set the settings in the table (Dockerfile path `Dockerfile`, start, pre-deploy, health check, restart, watch patterns). Generate a Railway domain. Set the variables below.
+4. **Worker service.** Create an empty service `Worker` with its settings from the table, and no domain. Set its variables, mostly as references to the API's (`${{API.…}}`), so each secret has one source of truth.
+5. **Secrets.** Set `OUTSTAND_API_KEY` and `OUTSTAND_WEBHOOK_SECRET` on the **API** service in the Railway dashboard. They are never committed and never pasted into chats or tickets.
+6. **Source.** Connect both services to the GitHub repository and branch. Each push to the branch deploys the affected services.
+7. **Outstand webhook.** In the Outstand dashboard, add the webhook endpoint `https://<api-domain>/v1/webhooks/outstand` with the signing secret set as `OUTSTAND_WEBHOOK_SECRET`. Outstand's *Test* action should then show a `processed` test event in `GET /v1/admin/webhook-events`.
 
 ## Variables
 
@@ -52,7 +50,7 @@ The worker needs `PUBLIC_BASE_URL` and `ALLOWED_RETURN_URL_ORIGINS` only because
 
 Configuration is validated at startup, and the process exits with a message listing every missing or invalid variable. In production, `PUBLIC_BASE_URL` must be https and `ALLOWED_RETURN_URL_ORIGINS` must not be empty.
 
-No secret is committed: `railway.toml` and `railway/worker.toml` contain only build and deploy settings, and CI blocks committed `.env` files.
+No secret is committed; CI blocks committed `.env` files.
 
 ## Verification after deploy
 

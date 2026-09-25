@@ -97,7 +97,7 @@ Integration tests drive the real Fastify app, the real Outstand client and a rea
 
 ## Railway deployment
 
-There is one Docker image and three Railway services: **API**, **Worker** and **PostgreSQL**. `railway.toml` configures the API and `railway/worker.toml` configures the worker. See [docs/RAILWAY.md](docs/RAILWAY.md).
+There is one Docker image and three Railway services: **API**, **Worker** and **PostgreSQL**. Service settings are recorded in [docs/RAILWAY.md](docs/RAILWAY.md).
 
 ## Security boundary
 
